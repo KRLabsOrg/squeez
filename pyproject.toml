@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "squeez"
+version = "0.1.0"
+description = "Squeeze verbose LLM agent tool output down to only the relevant lines"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Adam Kovacs", email = "kovacs@krlabs.eu"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch>=2.1.0",
+    "transformers>=4.45.0",
+    "peft>=0.7.0",
+    "datasets>=2.14.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/KRLabsOrg/squeez"
+Dataset = "https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.0.270",
+]
+
+[project.scripts]
+squeez = "squeez.inference.extractor:main"
+
+[tool.setuptools.packages.find]
+include = ["squeez*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # flake8
+    "F",   # pyflakes
+    "I",   # isort
+]
+ignore = [
+    "E501",   # line length
+]

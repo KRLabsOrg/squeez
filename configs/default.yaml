@@ -1,0 +1,24 @@
+# Training hyperparameters
+model: "Qwen/Qwen3.5-2B"
+max_length: 32768
+batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-4
+num_epochs: 3
+warmup_ratio: 0.05
+weight_decay: 0.01
+eval_steps: 500
+save_steps: 500
+save_total_limit: 3
+logging_steps: 50
+
+# LoRA config
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+# Data generation
+distillation_model: "gpt-5.4"
+max_tool_output_lines: 500
+tools_per_instance: [2, 5]
+target_compression: [0.05, 0.30]
