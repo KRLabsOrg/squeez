@@ -28,6 +28,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/KRLabsOrg/squeez"
+Documentation = "https://krlabsorg.github.io/squeez"
 Dataset = "https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench"
 
 [project.optional-dependencies]
@@ -35,9 +36,13 @@ dev = [
     "pytest>=7.0.0",
     "ruff>=0.0.270",
 ]
+docs = [
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
+]
 
 [project.scripts]
-squeez = "squeez.inference.extractor:main"
+squeez = "squeez.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["squeez*"]

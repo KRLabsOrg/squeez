@@ -1,0 +1,17 @@
+/* Squeez brand colors — lemon yellow */
+
+:root {
+  --md-primary-fg-color: #f5c518;
+  --md-primary-fg-color--light: #f7d44c;
+  --md-primary-fg-color--dark: #d4a810;
+  --md-accent-fg-color: #f5c518;
+  --md-accent-fg-color--transparent: rgba(245, 197, 24, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #f5c518;
+  --md-primary-fg-color--light: #f7d44c;
+  --md-primary-fg-color--dark: #d4a810;
+  --md-accent-fg-color: #f5c518;
+  --md-accent-fg-color--transparent: rgba(245, 197, 24, 0.1);
+}

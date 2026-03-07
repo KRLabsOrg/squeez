@@ -4,10 +4,8 @@ Formats each sample as a prompt/response pair with proper chat template
 tokens, and splits by SWE-bench repo to ensure zero overlap.
 """
 
-import hashlib
 import json
 import logging
-from pathlib import Path
 
 from squeez.data.config import SYSTEM_PROMPT, PipelineConfig
 
@@ -19,13 +17,7 @@ def _format_prompt(issue_text: str, output: str) -> str:
     if len(issue_text) > 3000:
         issue_text = issue_text[:3000] + "..."
 
-    return (
-        f"<|system|>\n{SYSTEM_PROMPT}\n"
-        f"<|user|>\n"
-        f"Task: {issue_text}\n\n"
-        f"{output}\n"
-        f"<|assistant|>\n"
-    )
+    return f"<|system|>\n{SYSTEM_PROMPT}\n<|user|>\nTask: {issue_text}\n\n{output}\n<|assistant|>\n"
 
 
 def _get_repo_from_instance_id(instance_id: str) -> str:
@@ -63,8 +55,8 @@ def assemble_samples(
     # Return cached
     if train_path.exists() and eval_path.exists():
         logger.info("Loading cached assembled samples")
-        train = [json.loads(l) for l in open(train_path)]
-        eval_ = [json.loads(l) for l in open(eval_path)]
+        train = [json.loads(line) for line in open(train_path)]
+        eval_ = [json.loads(line) for line in open(eval_path)]
         return train, eval_
 
     instance_map = {inst["instance_id"]: inst for inst in instances}
@@ -92,7 +84,8 @@ def assemble_samples(
         else:
             distilled = sample["distilled_output"]
             relevant = [
-                line for line in distilled.split("\n")
+                line
+                for line in distilled.split("\n")
                 if line.strip() and not line.strip().startswith("...")
             ]
             response = json.dumps({"relevant_lines": relevant})
@@ -127,7 +120,5 @@ def assemble_samples(
         for sample in eval_samples:
             f.write(json.dumps(sample) + "\n")
 
-    logger.info(
-        f"Assembled {len(train_samples)} train + {len(eval_samples)} eval samples"
-    )
+    logger.info(f"Assembled {len(train_samples)} train + {len(eval_samples)} eval samples")
     return train_samples, eval_samples

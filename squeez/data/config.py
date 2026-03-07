@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # Tool type weights for generation
 TOOL_WEIGHTS = {
     "read_file": 0.25,

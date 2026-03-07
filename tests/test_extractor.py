@@ -1,7 +1,5 @@
 """Tests for squeez core functionality."""
 
-import json
-
 from squeez.data.config import SYSTEM_PROMPT
 from squeez.inference.extractor import _format_prompt, _load_config
 

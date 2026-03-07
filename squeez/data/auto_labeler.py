@@ -65,9 +65,7 @@ def _find_imports_for_names(content: str, names: set[str]) -> list[int]:
     return import_lines
 
 
-def label_read_file(
-    output: str, instance: dict, tool_output: dict
-) -> dict[int, bool] | None:
+def label_read_file(output: str, instance: dict, tool_output: dict) -> dict[int, bool] | None:
     """Label read_file output lines using patch hunks.
 
     Relevant lines:
@@ -241,9 +239,7 @@ def label_generic(output: str, instance: dict) -> dict[int, bool] | None:
     return labels
 
 
-def auto_label_output(
-    tool_output: dict, instance: dict
-) -> dict | None:
+def auto_label_output(tool_output: dict, instance: dict) -> dict | None:
     """Auto-label a single tool output using patch ground truth.
 
     Returns a dict with labels and metadata, or None if quality filters reject it.
@@ -351,7 +347,5 @@ def auto_label_all(
         for item in labeled:
             f.write(json.dumps(item) + "\n")
 
-    logger.info(
-        f"Auto-labeled {len(labeled)} samples ({rejected} rejected by quality filters)"
-    )
+    logger.info(f"Auto-labeled {len(labeled)} samples ({rejected} rejected by quality filters)")
     return labeled

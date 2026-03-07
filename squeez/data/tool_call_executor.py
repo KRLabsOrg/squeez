@@ -12,8 +12,7 @@ import time
 from pathlib import Path
 
 from squeez.data.config import PipelineConfig
-from squeez.data.source_fetcher import number_lines, truncate_output, git_show_file
-from squeez.data.swebench_loader import parse_patch_files
+from squeez.data.source_fetcher import git_show_file, number_lines, truncate_output
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +83,7 @@ def _remove_worktree(repo_dir: Path, worktree_path: str):
         pass
 
 
-def execute_read_file(
-    call: dict, repo_dir: Path, commit: str, max_lines: int
-) -> str | None:
+def execute_read_file(call: dict, repo_dir: Path, commit: str, max_lines: int) -> str | None:
     """Read a file at the base commit using git show."""
     target = call.get("target_file", call.get("command", ""))
     content = git_show_file(repo_dir, commit, target)
@@ -96,9 +93,7 @@ def execute_read_file(
     return truncate_output(numbered, max_lines)
 
 
-def execute_grep(
-    call: dict, repo_dir: Path, commit: str, max_lines: int
-) -> str | None:
+def execute_grep(call: dict, repo_dir: Path, commit: str, max_lines: int) -> str | None:
     """Run real git grep on the repo at the base commit."""
     term = call.get("search_term", "")
     if not term:
@@ -117,16 +112,14 @@ def execute_grep(
     lines = []
     for line in output.split("\n"):
         if line.startswith(prefix):
-            lines.append(line[len(prefix):])
+            lines.append(line[len(prefix) :])
         else:
             lines.append(line)
     output = "\n".join(lines)
     return truncate_output(output, max_lines)
 
 
-def execute_git_log(
-    call: dict, repo_dir: Path, commit: str, max_lines: int
-) -> str | None:
+def execute_git_log(call: dict, repo_dir: Path, commit: str, max_lines: int) -> str | None:
     """Run real git log on the repo."""
     target = call.get("target_file", "")
     cmd = ["git", "log", "--oneline", "-20", commit]
@@ -139,9 +132,7 @@ def execute_git_log(
     return truncate_output(output, max_lines)
 
 
-def execute_git_diff(
-    call: dict, repo_dir: Path, commit: str, max_lines: int
-) -> str | None:
+def execute_git_diff(call: dict, repo_dir: Path, commit: str, max_lines: int) -> str | None:
     """Run real git diff on the repo."""
     target = call.get("target_file", "")
     # Diff between 5 commits back and the base commit
@@ -162,9 +153,7 @@ def execute_git_diff(
     return truncate_output(output, max_lines)
 
 
-def execute_git_blame(
-    call: dict, repo_dir: Path, commit: str, max_lines: int
-) -> str | None:
+def execute_git_blame(call: dict, repo_dir: Path, commit: str, max_lines: int) -> str | None:
     """Run real git blame on the repo."""
     target = call.get("target_file", "")
     if not target:
@@ -228,8 +217,12 @@ def execute_lint_output(
 
 
 def execute_test_output(
-    call: dict, repo_dir: Path, commit: str, instance: dict,
-    max_lines: int, worktree: str | None = None
+    call: dict,
+    repo_dir: Path,
+    commit: str,
+    instance: dict,
+    max_lines: int,
+    worktree: str | None = None,
 ) -> str | None:
     """Run real pytest on the worktree.
 
@@ -296,9 +289,7 @@ def execute_build_output(
     return truncate_output(output, max_lines)
 
 
-def execute_curl(
-    call: dict, max_lines: int
-) -> str | None:
+def execute_curl(call: dict, max_lines: int) -> str | None:
     """Run real curl command."""
     url = call.get("url", "")
     if not url:
@@ -441,7 +432,9 @@ def execute_all_tool_calls(
         if remaining <= 0:
             logger.info(f"Loading cached tool outputs from {output_path} ({len(results)} results)")
             return results
-        logger.info(f"Resuming execution: {len(done_instances)} instances done, {remaining} remaining")
+        logger.info(
+            f"Resuming execution: {len(done_instances)} instances done, {remaining} remaining"
+        )
 
     total_instances = len(calls_by_instance)
     done_count = len(done_instances)
@@ -457,6 +450,7 @@ def execute_all_tool_calls(
 
     # Group instances by repo so we can reuse one worktree per repo
     from collections import defaultdict
+
     instances_by_repo: dict[str, list[str]] = defaultdict(list)
     for iid in calls_by_instance:
         if iid in done_instances:
@@ -465,9 +459,13 @@ def execute_all_tool_calls(
         if rd:
             instances_by_repo[str(rd)].append(iid)
 
-    remaining_calls = sum(len(calls_by_instance[iid]) for iid in calls_by_instance if iid not in done_instances)
-    logger.info(f"Executing {remaining_calls} calls for {total_instances - done_count} instances "
-                f"across {len(instances_by_repo)} repos...")
+    remaining_calls = sum(
+        len(calls_by_instance[iid]) for iid in calls_by_instance if iid not in done_instances
+    )
+    logger.info(
+        f"Executing {remaining_calls} calls for {total_instances - done_count} instances "
+        f"across {len(instances_by_repo)} repos..."
+    )
 
     for repo_path, instance_ids in instances_by_repo.items():
         repo_dir = Path(repo_path)
@@ -501,8 +499,7 @@ def execute_all_tool_calls(
             instance_results = []
             for call in calls_by_instance[iid]:
                 result = execute_tool_call(
-                    call, repo_dir, commit, instance,
-                    config.max_tool_output_lines, worktree
+                    call, repo_dir, commit, instance, config.max_tool_output_lines, worktree
                 )
                 if result:
                     instance_results.append(result)
@@ -533,6 +530,8 @@ def execute_all_tool_calls(
             _remove_worktree(repo_dir, worktree)
             logger.info(f"Cleaned up worktree for {repo_name}")
 
-    logger.info(f"Executed {len(results)} tool calls ({failed_count} failed) "
-                f"in {time.time() - start_time:.1f}s")
+    logger.info(
+        f"Executed {len(results)} tool calls ({failed_count} failed) "
+        f"in {time.time() - start_time:.1f}s"
+    )
     return results

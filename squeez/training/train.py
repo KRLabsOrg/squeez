@@ -40,7 +40,7 @@ def train(args: argparse.Namespace):
     config = load_config(args.config)
 
     # Resolve parameters (CLI args override config)
-    model_name = args.model or config.get("model", "Qwen/Qwen3.5-2B")
+    model_name = args.base_model or config.get("model", "Qwen/Qwen3.5-2B")
     max_length = args.max_length or config.get("max_length", 4096)
     batch_size = args.batch_size or config.get("batch_size", 2)
     grad_accum = args.gradient_accumulation_steps or config.get("gradient_accumulation_steps", 8)
@@ -137,11 +137,20 @@ def train(args: argparse.Namespace):
     logger.info("Training complete!")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Train tool output extractor with LoRA")
+def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:
+    """Build the parser for the training CLI."""
+    if parser is None:
+        parser = argparse.ArgumentParser(description="Train tool output extractor with LoRA")
+
     parser.add_argument("--train-file", required=True, help="Path to train.jsonl")
     parser.add_argument("--eval-file", default=None, help="Path to eval.jsonl")
-    parser.add_argument("--model", default=None, help="Base model name/path")
+    parser.add_argument(
+        "--base-model",
+        "--model",
+        dest="base_model",
+        default=None,
+        help="Base model name or path to fine-tune",
+    )
     parser.add_argument("--output-dir", default=None, help="Output directory")
     parser.add_argument("--config", default=None, help="YAML config file")
     parser.add_argument("--batch-size", type=int, default=None)
@@ -151,8 +160,12 @@ def main():
     parser.add_argument("--lora-r", type=int, default=None)
     parser.add_argument("--lora-alpha", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -160,7 +173,8 @@ def main():
     )
 
     train(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

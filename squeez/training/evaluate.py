@@ -12,9 +12,6 @@ import logging
 import re
 import statistics
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +102,9 @@ def evaluate_model(
         Dict with aggregate metrics
 
     """
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     logger.info(f"Loading model from {model_path}")
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
@@ -191,27 +191,46 @@ def evaluate_model(
     return results
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Evaluate tool output extractor")
-    parser.add_argument("--model-path", required=True, help="Path to trained model")
+def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:
+    """Build the parser for the evaluation CLI."""
+    if parser is None:
+        parser = argparse.ArgumentParser(description="Evaluate tool output extractor")
+
+    parser.add_argument(
+        "--extractor-model",
+        "--model-path",
+        dest="extractor_model",
+        required=True,
+        help="Path to the trained extractor model",
+    )
     parser.add_argument("--eval-file", required=True, help="Path to eval.jsonl")
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=1024)
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    results = evaluate_model(args.model_path, args.eval_file, args.max_samples, args.max_new_tokens)
+    results = evaluate_model(
+        args.extractor_model,
+        args.eval_file,
+        args.max_samples,
+        args.max_new_tokens,
+    )
 
     # Save results
     with open("eval_results.json", "w") as f:
         json.dump(results, f, indent=2)
     logger.info("Results saved to eval_results.json")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

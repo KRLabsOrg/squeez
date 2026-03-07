@@ -6,12 +6,8 @@ fails. All tool execution in Phase 4 runs against these cloned repos.
 
 import json
 import logging
-import os
 import subprocess
-import time
 from pathlib import Path
-
-import requests
 
 from squeez.data.config import PipelineConfig
 from squeez.data.swebench_loader import parse_patch_files
@@ -103,9 +99,7 @@ def git_ls_tree(repo_dir: Path, commit: str, directory: str) -> list[str]:
         return []
 
 
-def _get_sibling_files(
-    repo_dir: Path, commit: str, file_path: str
-) -> list[str]:
+def _get_sibling_files(repo_dir: Path, commit: str, file_path: str) -> list[str]:
     """Get other source files in the same directory using git ls-tree."""
     directory = str(Path(file_path).parent)
     if directory == ".":
@@ -113,10 +107,7 @@ def _get_sibling_files(
 
     all_files = git_ls_tree(repo_dir, commit, directory)
     source_exts = {".py", ".js", ".ts", ".java", ".go", ".rs", ".c", ".cpp", ".h"}
-    return [
-        f for f in all_files
-        if f != file_path and any(f.endswith(ext) for ext in source_exts)
-    ]
+    return [f for f in all_files if f != file_path and any(f.endswith(ext) for ext in source_exts)]
 
 
 def fetch_sources_for_instance(
@@ -191,7 +182,7 @@ def fetch_all_sources(
         instance_id = instance["instance_id"]
         repo = instance["repo"]
 
-        logger.info(f"[{i+1}/{len(instances)}] Fetching sources for {instance_id}")
+        logger.info(f"[{i + 1}/{len(instances)}] Fetching sources for {instance_id}")
 
         # Clone repo if not already done
         if repo in clone_failed:
@@ -208,7 +199,9 @@ def fetch_all_sources(
         sources = fetch_sources_for_instance(instance, repo_dir, config.source_cache_dir)
         all_sources[instance_id] = sources
 
-    logger.info(f"Fetched sources for {len(all_sources)} instances ({len(clone_failed)} repos failed)")
+    logger.info(
+        f"Fetched sources for {len(all_sources)} instances ({len(clone_failed)} repos failed)"
+    )
     return all_sources, repo_dirs
 
 

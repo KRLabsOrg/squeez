@@ -21,6 +21,11 @@ CONFIG_SEARCH_PATHS = [
     Path.home() / ".config" / "squeez" / "config.yaml",
 ]
 
+LOCAL_MODEL_ENV_VARS = ("SQUEEZ_LOCAL_MODEL", "SQUEEZ_MODEL_PATH")
+SERVER_URL_ENV_VARS = ("SQUEEZ_SERVER_URL", "SQUEEZ_BASE_URL")
+SERVER_MODEL_ENV_VARS = ("SQUEEZ_SERVER_MODEL",)
+BACKEND_ENV_VARS = ("SQUEEZ_BACKEND",)
+
 
 def _load_config() -> dict:
     """Load config from first found config file."""
@@ -33,18 +38,30 @@ def _load_config() -> dict:
     return {}
 
 
+def _first_config_value(config: dict, *keys: str) -> str | None:
+    """Return the first configured value from a list of keys."""
+    for key in keys:
+        value = config.get(key)
+        if value:
+            return value
+    return None
+
+
+def _first_env_value(*names: str) -> str | None:
+    """Return the first non-empty environment variable value."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
 def _format_prompt(task: str, tool_output: str) -> str:
     """Format the input prompt."""
     if len(task) > 3000:
         task = task[:3000] + "..."
 
-    return (
-        f"<|system|>\n{SYSTEM_PROMPT}\n"
-        f"<|user|>\n"
-        f"Task: {task}\n\n"
-        f"{tool_output}\n"
-        f"<|assistant|>\n"
-    )
+    return f"<|system|>\n{SYSTEM_PROMPT}\n<|user|>\nTask: {task}\n\n{tool_output}\n<|assistant|>\n"
 
 
 class ToolOutputExtractor:
@@ -81,21 +98,41 @@ class ToolOutputExtractor:
 
         # Resolution order: explicit args > env var > config file
         config = _load_config()
+        preferred_backend = _first_env_value(*BACKEND_ENV_VARS) or config.get("backend")
+
+        if not model_name:
+            model_name = _first_env_value(*SERVER_MODEL_ENV_VARS) or _first_config_value(
+                config, "server_model", "model_name"
+            )
 
         if not base_url:
-            base_url = os.environ.get("SQUEEZ_BASE_URL") or config.get("base_url")
+            base_url = _first_env_value(*SERVER_URL_ENV_VARS) or _first_config_value(
+                config, "server_url", "base_url"
+            )
         if not model_path:
-            model_path = os.environ.get("SQUEEZ_MODEL_PATH") or config.get("model_path")
+            model_path = _first_env_value(*LOCAL_MODEL_ENV_VARS) or _first_config_value(
+                config, "local_model_path", "model_path"
+            )
 
-        if base_url:
+        if preferred_backend == "vllm":
+            if not base_url:
+                raise ValueError("Backend is set to vllm, but no server URL was configured.")
+            self._init_vllm(base_url, model_name)
+        elif preferred_backend == "transformers":
+            if not model_path:
+                raise ValueError(
+                    "Backend is set to transformers, but no local model was configured."
+                )
+            self._init_transformers(model_path, device)
+        elif base_url:
             self._init_vllm(base_url, model_name)
         elif model_path:
             self._init_transformers(model_path, device)
         else:
             raise ValueError(
                 "No backend configured. Set model_path or base_url via:\n"
-                "  - CLI args: --model-path or --base-url\n"
-                "  - Env vars: SQUEEZ_MODEL_PATH or SQUEEZ_BASE_URL\n"
+                "  - CLI args: --local-model or --server-url\n"
+                "  - Env vars: SQUEEZ_LOCAL_MODEL or SQUEEZ_SERVER_URL\n"
                 "  - Config file: squeez.yaml or configs/default.yaml"
             )
 
@@ -160,6 +197,7 @@ class ToolOutputExtractor:
         # Parse JSON response
         try:
             import json
+
             data = json.loads(raw)
             lines = data.get("relevant_lines", [])
             return "\n".join(lines)
@@ -212,26 +250,54 @@ class ToolOutputExtractor:
             )
 
         generated = self._tokenizer.decode(
-            outputs[0][inputs["input_ids"].shape[1]:],
+            outputs[0][inputs["input_ids"].shape[1] :],
             skip_special_tokens=True,
         )
         return generated.strip()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Extract relevant lines from tool output",
-        epilog="Reads tool output from stdin or --input-file, writes filtered output to stdout.",
-    )
+def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:
+    """Build the parser for the extractor CLI."""
+    if parser is None:
+        parser = argparse.ArgumentParser(
+            description="Extract relevant lines from tool output",
+            epilog="Reads tool output from stdin or --input-file, writes filtered output to stdout.",
+        )
+
     parser.add_argument("task", nargs="?", default="", help="Task/issue description (optional)")
-    parser.add_argument("--input-file", default=None, help="File to read as tool output (default: stdin)")
-    parser.add_argument("--model-path", default=None, help="Path to local model (overrides config)")
-    parser.add_argument("--base-url", default=None, help="vLLM server URL (overrides config)")
-    parser.add_argument("--model-name", default=None, help="Model name on vLLM server (auto-detected if omitted)")
+    parser.add_argument(
+        "--input-file",
+        default=None,
+        help="File to read as tool output (default: stdin)",
+    )
+    parser.add_argument(
+        "--local-model",
+        "--model-path",
+        dest="local_model",
+        default=None,
+        help="Path to a local extractor model (overrides config)",
+    )
+    parser.add_argument(
+        "--server-url",
+        "--base-url",
+        dest="server_url",
+        default=None,
+        help="URL for an OpenAI-compatible model server (overrides config)",
+    )
+    parser.add_argument(
+        "--server-model",
+        "--model-name",
+        dest="server_model",
+        default=None,
+        help="Model ID on the remote server (auto-detected if omitted)",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.1)
+    return parser
 
-    args = parser.parse_args()
+
+def run(args: argparse.Namespace) -> int:
+    """Run the extractor CLI from parsed args."""
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -244,9 +310,9 @@ def main():
         tool_output = sys.stdin.read()
 
     extractor = ToolOutputExtractor(
-        model_path=args.model_path,
-        base_url=args.base_url,
-        model_name=args.model_name,
+        model_path=args.local_model,
+        base_url=args.server_url,
+        model_name=args.server_model,
     )
 
     result = extractor.extract(
@@ -257,7 +323,15 @@ def main():
     )
 
     print(result)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point for extraction."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return run(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

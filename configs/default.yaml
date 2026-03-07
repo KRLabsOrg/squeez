@@ -1,7 +1,8 @@
 # Inference
-backend: "transformers"  # "transformers" or "vllm"
-model_path: "./output/squeez_qwen"
-base_url: null  # e.g. "http://localhost:8000/v1"
+backend: "transformers"  # optional preference: "transformers" or "vllm"
+local_model_path: "./output/squeez_qwen"
+server_url: null  # OpenAI-compatible API, e.g. "http://localhost:8000/v1"
+server_model: null  # optional remote model id when using a server
 
 # Training hyperparameters
 model: "Qwen/Qwen3.5-2B"

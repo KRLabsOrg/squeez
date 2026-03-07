@@ -143,6 +143,9 @@ cat output.txt | squeez "Fix the CSRF validation bug"
 
 # Or with a file
 squeez "Fix the CSRF bug" --input-file output.txt
+
+# Explicit extract subcommand also works
+squeez extract "Fix the CSRF bug" --input-file output.txt
 ```
 
 ### Python API
@@ -150,11 +153,14 @@ squeez "Fix the CSRF bug" --input-file output.txt
 ```python
 from squeez.inference.extractor import ToolOutputExtractor
 
-# Connects to vLLM server (default: localhost:8000)
+# Load model from config/env
 extractor = ToolOutputExtractor()
 
 # Or load model locally
 extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
+
+# Or connect to a server explicitly
+extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1", model_name="squeez")
 
 filtered = extractor.extract(
     task="Fix the CSRF validation bug in middleware",
@@ -171,15 +177,25 @@ Backend is resolved in order: CLI args > env vars > config file (`squeez.yaml` o
 
 ```yaml
 # squeez.yaml
-model_path: "./output/squeez_qwen"     # local transformers
-# base_url: "https://api.groq.com/openai/v1"  # or remote API
+backend: "transformers"  # optional preference
+local_model_path: "./output/squeez_qwen"
+# server_url: "https://api.groq.com/openai/v1"
+# server_model: "squeez"
 ```
 
 ```bash
 # Or via environment variables
-export SQUEEZ_MODEL_PATH=./output/squeez_qwen
-export SQUEEZ_BASE_URL=https://api.groq.com/openai/v1
+export SQUEEZ_LOCAL_MODEL=./output/squeez_qwen
+export SQUEEZ_SERVER_URL=https://api.groq.com/openai/v1
+export SQUEEZ_SERVER_MODEL=squeez
 export SQUEEZ_API_KEY=gsk_...
+```
+
+Clear flag names are available on the CLI, with the old names kept as aliases:
+
+```bash
+squeez "Fix the bug" --local-model ./output/squeez_qwen
+squeez "Fix the bug" --server-url http://localhost:8000/v1 --server-model squeez
 ```
 
 ### Use with Claude Code
@@ -216,7 +232,7 @@ This pulls the [SWE-bench tool output dataset](https://huggingface.co/datasets/K
 ### 2. Train with LoRA
 
 ```bash
-python -m squeez.training.train \
+squeez train \
     --train-file data/train.jsonl \
     --eval-file data/eval.jsonl
 ```
@@ -226,8 +242,8 @@ Default: Qwen 3.5 2B with LoRA (r=16, alpha=32). See `configs/default.yaml` for 
 ### 3. Evaluate
 
 ```bash
-python -m squeez.training.evaluate \
-    --model-path output/squeez_qwen \
+squeez eval \
+    --extractor-model output/squeez_qwen \
     --eval-file data/eval.jsonl
 ```
 
@@ -275,11 +291,11 @@ Built from 2,294 [SWE-bench](https://huggingface.co/datasets/princeton-nlp/SWE-b
 To regenerate the dataset from scratch:
 
 ```bash
-python -m squeez.data.pipeline --phase all \
+squeez pipeline --phase 1 2 3 4 5 6 7 8 \
     --output-dir data \
     --github-token $GITHUB_TOKEN \
-    --openai-api-key $GROQ_API_KEY \
-    --distillation-base-url https://api.groq.com/openai/v1
+    --teacher-api-key $GROQ_API_KEY \
+    --teacher-base-url https://api.groq.com/openai/v1
 ```
 
 ## Citation

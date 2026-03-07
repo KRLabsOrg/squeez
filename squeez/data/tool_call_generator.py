@@ -58,9 +58,7 @@ def _pick_tool_types(n: int) -> list[str]:
     return selected
 
 
-def _generate_read_file_call(
-    patch_files: list[str], sibling_files: list[str]
-) -> dict:
+def _generate_read_file_call(patch_files: list[str], sibling_files: list[str]) -> dict:
     """Generate a read_file tool call spec.
 
     Mix of patch files and decoys — the model must learn to handle both.
@@ -92,16 +90,10 @@ def _generate_read_file_call(
     }
 
 
-def _generate_grep_call(
-    identifiers: dict[str, list[str]], issue_terms: list[str]
-) -> dict:
+def _generate_grep_call(identifiers: dict[str, list[str]], issue_terms: list[str]) -> dict:
     """Generate a grep/search tool call spec."""
     # Pick a search term from identifiers or issue
-    candidates = (
-        identifiers.get("functions", [])
-        + identifiers.get("classes", [])
-        + issue_terms[:3]
-    )
+    candidates = identifiers.get("functions", []) + identifiers.get("classes", []) + issue_terms[:3]
     if not candidates:
         candidates = identifiers.get("variables", ["TODO"])
 
@@ -190,9 +182,7 @@ def _generate_lint_call(patch_files: list[str]) -> dict:
     return {"tool_type": "lint_output", "command": "ruff check ."}
 
 
-def _generate_curl_call(
-    instance: dict, identifiers: dict[str, list[str]]
-) -> dict:
+def _generate_curl_call(instance: dict, identifiers: dict[str, list[str]]) -> dict:
     """Generate a curl tool call spec.
 
     Simulates an agent fetching documentation, API responses, or package info
@@ -252,25 +242,25 @@ def _generate_python_call(
     """
     classes = identifiers.get("classes", [])
     functions = identifiers.get("functions", [])
-    variables = identifiers.get("variables", [])
-
     # Build a set of realistic python commands
     commands = []
 
     # Import and inspect a module from the changed file
     if patch_files:
         module = patch_files[0].replace("/", ".").replace(".py", "")
-        commands.append(f"python -c \"import {module}; print(dir({module}))\"")
+        commands.append(f'python -c "import {module}; print(dir({module}))"')
         if classes:
             cls = random.choice(classes)
-            commands.append(f"python -c \"from {module} import {cls}; help({cls})\"")
-            commands.append(f"python -c \"from {module} import {cls}; print({cls}.__mro__)\"")
+            commands.append(f'python -c "from {module} import {cls}; help({cls})"')
+            commands.append(f'python -c "from {module} import {cls}; print({cls}.__mro__)"')
         if functions:
             fn = random.choice(functions)
-            commands.append(f"python -c \"from {module} import {fn}; import inspect; print(inspect.getsource({fn}))\"")
+            commands.append(
+                f'python -c "from {module} import {fn}; import inspect; print(inspect.getsource({fn}))"'
+            )
 
     # Reproduce the bug from the issue
-    commands.append("python -c \"import sys; print(sys.version)\"")
+    commands.append('python -c "import sys; print(sys.version)"')
 
     # Try to run a specific test
     if instance.get("FAIL_TO_PASS"):
@@ -297,9 +287,7 @@ def _generate_build_call() -> dict:
     }
 
 
-def generate_tool_calls_for_instance(
-    instance: dict, available_files: list[str]
-) -> list[dict]:
+def generate_tool_calls_for_instance(instance: dict, available_files: list[str]) -> list[dict]:
     """Generate a set of tool call specs for a single SWE-bench instance.
 
     Args:

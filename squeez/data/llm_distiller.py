@@ -162,7 +162,10 @@ async def _distill_single(
                 response = await client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "You select relevant line ranges from tool output. Always respond with valid JSON."},
+                        {
+                            "role": "system",
+                            "content": "You select relevant line ranges from tool output. Always respond with valid JSON.",
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     temperature=temperature,
@@ -189,7 +192,7 @@ async def _distill_single(
 
                 if not spans:
                     if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
+                        await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
                         continue
                     counter["failed"] += 1
                     return None
@@ -208,7 +211,9 @@ async def _distill_single(
                     counter["failed"] += 1
                     return None
 
-                kept_lines = sum(s.get("end", s.get("start", 0)) - s.get("start", 0) + 1 for s in spans)
+                kept_lines = sum(
+                    s.get("end", s.get("start", 0)) - s.get("start", 0) + 1 for s in spans
+                )
                 counter["done"] += 1
                 return {
                     **sample,
@@ -222,12 +227,12 @@ async def _distill_single(
             except Exception as e:
                 err_str = str(e).lower()
                 if "rate_limit" in err_str or "429" in err_str or "too many" in err_str:
-                    delay = RETRY_BASE_DELAY * (2 ** attempt) * 2
+                    delay = RETRY_BASE_DELAY * (2**attempt) * 2
                     logger.warning(f"Rate limited, retrying in {delay:.0f}s...")
                     await asyncio.sleep(delay)
                     continue
                 if attempt < MAX_RETRIES - 1:
-                    await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
+                    await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
                     continue
                 logger.error(f"Distillation error for {sample['instance_id']}: {e}")
                 counter["failed"] += 1
@@ -268,12 +273,14 @@ async def distill_batch_async(
     # Process in batches for incremental saving
     BATCH_SIZE = 200
 
-    logger.info(f"Distilling {len(samples)} samples with {config.distillation_model} "
-                f"(concurrency={config.distillation_max_concurrent})...")
+    logger.info(
+        f"Distilling {len(samples)} samples with {config.distillation_model} "
+        f"(concurrency={config.distillation_max_concurrent})..."
+    )
     start_time = time.time()
 
     for batch_start in range(0, len(samples), BATCH_SIZE):
-        batch = samples[batch_start:batch_start + BATCH_SIZE]
+        batch = samples[batch_start : batch_start + BATCH_SIZE]
         counter["total"] = batch_start + len(batch)
 
         tasks = []
@@ -283,10 +290,13 @@ async def distill_batch_async(
                 continue
             tasks.append(
                 _distill_single(
-                    client, sample, instance,
+                    client,
+                    sample,
+                    instance,
                     config.distillation_model,
                     config.distillation_temperature,
-                    semaphore, counter,
+                    semaphore,
+                    counter,
                 )
             )
 
@@ -309,8 +319,10 @@ async def distill_batch_async(
                 for result in all_results:
                     f.write(json.dumps(result) + "\n")
 
-    logger.info(f"Successfully distilled {len(all_results)}/{len(samples)} samples "
-                f"in {time.time() - start_time:.1f}s")
+    logger.info(
+        f"Successfully distilled {len(all_results)}/{len(samples)} samples "
+        f"in {time.time() - start_time:.1f}s"
+    )
     return all_results
 
 
@@ -340,8 +352,7 @@ def distill_all(
 
     # Filter to only undone samples
     remaining = [
-        s for s in labeled_samples
-        if f"{s['instance_id']}::{s.get('command', '')}" not in done_keys
+        s for s in labeled_samples if f"{s['instance_id']}::{s.get('command', '')}" not in done_keys
     ]
 
     if not remaining:
@@ -350,9 +361,7 @@ def distill_all(
 
     logger.info(f"Resuming distillation: {len(existing)} done, {len(remaining)} remaining")
 
-    new_results = asyncio.run(
-        distill_batch_async(remaining, instances, config, str(output_path))
-    )
+    new_results = asyncio.run(distill_batch_async(remaining, instances, config, str(output_path)))
 
     all_results = existing + new_results
 

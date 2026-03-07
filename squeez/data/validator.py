@@ -68,11 +68,7 @@ def validate_dataset(
     }
 
     # Compression ratio distribution
-    ratios = [
-        s["metadata"].get("compression_ratio", 0)
-        for s in all_samples
-        if "metadata" in s
-    ]
+    ratios = [s["metadata"].get("compression_ratio", 0) for s in all_samples if "metadata" in s]
     report["compression_ratio"] = _compute_stats(ratios)
 
     # Check target range (70-95% compression)
@@ -88,9 +84,7 @@ def validate_dataset(
 
     # Tool type balance
     tool_counts = Counter(
-        s["metadata"].get("tool_type", "unknown")
-        for s in all_samples
-        if "metadata" in s
+        s["metadata"].get("tool_type", "unknown") for s in all_samples if "metadata" in s
     )
     report["tool_type_balance"] = dict(tool_counts.most_common())
 
@@ -108,9 +102,7 @@ def validate_dataset(
     }
 
     if len(eval_samples) < 10:
-        report["warnings"].append(
-            f"Very few eval samples ({len(eval_samples)})"
-        )
+        report["warnings"].append(f"Very few eval samples ({len(eval_samples)})")
 
     # Prompt length distribution (in characters)
     prompt_lengths = [len(s["prompt"]) for s in all_samples]
@@ -121,11 +113,9 @@ def validate_dataset(
     report["response_length"] = _compute_stats(response_lengths)
 
     # Check for extremely long prompts
-    long_prompts = sum(1 for l in prompt_lengths if l > 50000)
+    long_prompts = sum(1 for prompt_length in prompt_lengths if prompt_length > 50000)
     if long_prompts > 0:
-        report["warnings"].append(
-            f"{long_prompts} prompts exceed 50K characters"
-        )
+        report["warnings"].append(f"{long_prompts} prompts exceed 50K characters")
 
     # Check for empty responses
     empty = sum(1 for s in all_samples if not s["response"].strip())
@@ -133,9 +123,7 @@ def validate_dataset(
         report["warnings"].append(f"{empty} samples have empty responses")
 
     # Unique instances
-    unique_instances = set(
-        s["metadata"]["instance_id"] for s in all_samples if "metadata" in s
-    )
+    unique_instances = set(s["metadata"]["instance_id"] for s in all_samples if "metadata" in s)
     report["summary"]["unique_instances"] = len(unique_instances)
 
     return report
