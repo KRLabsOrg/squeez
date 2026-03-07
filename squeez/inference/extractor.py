@@ -9,10 +9,28 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 
 from squeez.data.config import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
+
+CONFIG_SEARCH_PATHS = [
+    Path("squeez.yaml"),
+    Path("configs/default.yaml"),
+    Path.home() / ".config" / "squeez" / "config.yaml",
+]
+
+
+def _load_config() -> dict:
+    """Load config from first found config file."""
+    for path in CONFIG_SEARCH_PATHS:
+        if path.exists():
+            import yaml
+
+            with open(path) as f:
+                return yaml.safe_load(f) or {}
+    return {}
 
 
 def _format_prompt(task: str, tool_output: str) -> str:
@@ -61,20 +79,32 @@ class ToolOutputExtractor:
         self._client = None
         self._model_name = model_name
 
-        # Resolve base_url: explicit > env var > default
-        if not base_url and not model_path:
-            base_url = os.environ.get("TOE_BASE_URL", "http://localhost:8000/v1")
+        # Resolution order: explicit args > env var > config file
+        config = _load_config()
+
+        if not base_url:
+            base_url = os.environ.get("SQUEEZ_BASE_URL") or config.get("base_url")
+        if not model_path:
+            model_path = os.environ.get("SQUEEZ_MODEL_PATH") or config.get("model_path")
 
         if base_url:
             self._init_vllm(base_url, model_name)
-        else:
+        elif model_path:
             self._init_transformers(model_path, device)
+        else:
+            raise ValueError(
+                "No backend configured. Set model_path or base_url via:\n"
+                "  - CLI args: --model-path or --base-url\n"
+                "  - Env vars: SQUEEZ_MODEL_PATH or SQUEEZ_BASE_URL\n"
+                "  - Config file: squeez.yaml or configs/default.yaml"
+            )
 
     def _init_vllm(self, base_url: str, model_name: str | None):
-        """Initialize vLLM/OpenAI-compatible backend."""
+        """Initialize OpenAI-compatible backend (vLLM, Groq, etc.)."""
         from openai import OpenAI
 
-        self._client = OpenAI(base_url=base_url, api_key="unused")
+        api_key = os.environ.get("SQUEEZ_API_KEY") or os.environ.get("OPENAI_API_KEY") or "unused"
+        self._client = OpenAI(base_url=base_url, api_key=api_key)
         self._backend = "vllm"
 
         # Auto-detect model name from server if not provided
@@ -139,16 +169,22 @@ class ToolOutputExtractor:
     def _extract_vllm(
         self, task: str, tool_output: str, max_new_tokens: int, temperature: float
     ) -> str:
-        """Extract using vLLM/OpenAI-compatible server."""
-        prompt = _format_prompt(task, tool_output)
+        """Extract using OpenAI-compatible server (chat completions API)."""
+        if len(task) > 3000:
+            task = task[:3000] + "..."
 
-        response = self._client.completions.create(
+        user_content = f"Task: {task}\n\n{tool_output}" if task else tool_output
+
+        response = self._client.chat.completions.create(
             model=self._model_name,
-            prompt=prompt,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
             max_tokens=max_new_tokens,
             temperature=temperature,
         )
-        return response.choices[0].text.strip()
+        return response.choices[0].message.content.strip()
 
     def _extract_transformers(
         self, task: str, tool_output: str, max_new_tokens: int, temperature: float
@@ -189,8 +225,8 @@ def main():
     )
     parser.add_argument("task", nargs="?", default="", help="Task/issue description (optional)")
     parser.add_argument("--input-file", default=None, help="File to read as tool output (default: stdin)")
-    parser.add_argument("--model-path", default=None, help="Path to local model (transformers backend)")
-    parser.add_argument("--base-url", default=None, help="vLLM server URL (e.g. http://localhost:8000/v1)")
+    parser.add_argument("--model-path", default=None, help="Path to local model (overrides config)")
+    parser.add_argument("--base-url", default=None, help="vLLM server URL (overrides config)")
     parser.add_argument("--model-name", default=None, help="Model name on vLLM server (auto-detected if omitted)")
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.1)
@@ -198,6 +234,7 @@ def main():
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # Read input
     if args.input_file:

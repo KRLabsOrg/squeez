@@ -1,3 +1,8 @@
+# Inference
+backend: "transformers"  # "transformers" or "vllm"
+model_path: "./output/squeez_qwen"
+base_url: null  # e.g. "http://localhost:8000/v1"
+
 # Training hyperparameters
 model: "Qwen/Qwen3.5-2B"
 max_length: 32768
