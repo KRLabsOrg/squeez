@@ -25,9 +25,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project-specific
-data/
-output/
+# Project-specific (only root-level data/, not squeez/data/)
+/data/
+/output/
 *.jsonl
 wandb/
 runs/
