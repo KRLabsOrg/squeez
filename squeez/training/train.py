@@ -83,8 +83,24 @@ def _prepare_text_tokenizer(model_name: str, tokenizer):
     return tokenizer
 
 
+def _ensure_transformers_pretrained_config_alias(transformers_module=None) -> None:
+    """Work around Unsloth expecting PreTrainedConfig on newer Transformers."""
+    if transformers_module is None:
+        import transformers as transformers_module
+
+    if not hasattr(transformers_module, "PreTrainedConfig") and hasattr(
+        transformers_module, "PretrainedConfig"
+    ):
+        transformers_module.PreTrainedConfig = transformers_module.PretrainedConfig
+        logger.info(
+            "Aliased transformers.PreTrainedConfig to PretrainedConfig for Unsloth compatibility"
+        )
+
+
 def train(args: argparse.Namespace):
     """Run LoRA fine-tuning with Unsloth + SFTTrainer."""
+    _ensure_transformers_pretrained_config_alias()
+
     from unsloth import FastLanguageModel  # noqa: I001
     from unsloth.chat_templates import train_on_responses_only
 
