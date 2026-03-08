@@ -15,7 +15,12 @@ Squeeze verbose LLM agent tool output down to only the relevant lines.
 
 LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. When an agent reads a 500-line file to find one function, or runs `git log` to find a specific commit, most of the output is noise.
 
-Squeez trains a small (2-3B) generative model to identify and extract only the lines that matter for the task at hand — compressing tool output by ~86% on average.
+Squeez trains small models to identify and extract only the lines that matter for the task at hand — compressing tool output by ~86% on average.
+
+Two approaches are available:
+
+- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via JSON generation
+- **Encoder** (mmBERT 307M) — fast line-level binary classification, sliding window over long outputs
 
 ## Example
 
@@ -133,10 +138,16 @@ $ git log --oneline -25 | squeez "find the commit that changed the authenticatio
 pip install squeez
 ```
 
-For local model training, use the pinned stack in [requirements-train.txt](/Users/adamkovacs/projects/squeez/requirements-train.txt):
+For generative model training (Qwen + LoRA):
 
 ```bash
 pip install -r requirements-train.txt
+```
+
+For encoder model training (mmBERT):
+
+```bash
+pip install -r requirements-encoder.txt
 ```
 
 ## Quick Start
@@ -162,8 +173,11 @@ from squeez.inference.extractor import ToolOutputExtractor
 # Load model from config/env
 extractor = ToolOutputExtractor()
 
-# Or load model locally
+# Or load a generative model locally
 extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
+
+# Or load an encoder model (auto-detected from config.json)
+extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
 
 # Or connect to a server explicitly
 extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1", model_name="squeez")
@@ -175,7 +189,7 @@ filtered = extractor.extract(
 print(filtered)  # Only the relevant lines
 ```
 
-The model returns JSON: `{"relevant_lines": ["line1", "line2", ...]}` and the `extract()` method joins them into filtered text.
+Both model types use the same `extract()` API. The generative model returns JSON (`{"relevant_lines": [...]}`), the encoder classifies each line directly. Both return filtered text.
 
 ### Configuration
 
@@ -183,7 +197,7 @@ Backend is resolved in order: CLI args > env vars > config file (`squeez.yaml` o
 
 ```yaml
 # squeez.yaml
-backend: "transformers"  # optional preference
+backend: null  # auto-detect from model; or "transformers", "vllm", "encoder"
 local_model_path: "./output/squeez_qwen"
 # server_url: "https://api.groq.com/openai/v1"
 # server_model: "squeez"
@@ -235,23 +249,47 @@ python scripts/download_data.py
 
 This pulls the [SWE-bench tool output dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) (7,148 train + 436 eval samples) from HuggingFace.
 
-### 2. Train with LoRA
+### 2a. Train generative model (Qwen + LoRA)
 
 ```bash
 squeez train \
     --train-file data/train.jsonl \
-    --eval-file data/eval.jsonl
+    --eval-file data/dev.jsonl
 ```
 
 Default: Qwen 3.5 2B with LoRA (r=16, alpha=32). See `configs/default.yaml` for all hyperparameters.
 
+### 2b. Train encoder model (mmBERT)
+
+```bash
+# Prepare encoder-format data from the ChatML training data
+python scripts/prepare_encoder_data.py
+
+# Train the encoder
+python -m squeez.encoder.train \
+    --train-file data/encoder_train.jsonl \
+    --eval-file data/encoder_dev.jsonl \
+    --base-model jhu-clsp/mmBERT-base \
+    --output-dir output/squeez_encoder
+```
+
+The encoder is a 307M parameter mmBERT with a token classification head. It classifies each line as relevant/irrelevant and uses sliding windows to handle outputs longer than the 8K context.
+
 ### 3. Evaluate
 
 ```bash
+# Generative model
 squeez eval \
     --extractor-model output/squeez_qwen \
-    --eval-file data/eval.jsonl
+    --eval-file data/test.jsonl
+
+# Encoder model
+python -m squeez.encoder.evaluate \
+    --model-path output/squeez_encoder \
+    --eval-file data/encoder_test.jsonl
 ```
+
+Both produce the same metrics format (span F1, ROUGE-L, compression ratio) for direct comparison.
 
 ## Dataset
 

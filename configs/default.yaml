@@ -1,5 +1,5 @@
 # Inference
-backend: "transformers"  # optional preference: "transformers" or "vllm"
+backend: null  # auto-detect from model; set to "transformers", "vllm", or "encoder"
 local_model_path: "./output/squeez_qwen"
 server_url: null  # OpenAI-compatible API, e.g. "http://localhost:8000/v1"
 server_model: null  # optional remote model id when using a server
@@ -22,6 +22,15 @@ logging_steps: 25
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
+
+# Encoder training hyperparameters
+encoder_base_model: "jhu-clsp/mmBERT-base"
+encoder_max_length: 8192
+encoder_batch_size: 16
+encoder_learning_rate: 2.0e-5
+encoder_num_epochs: 5
+encoder_warmup_ratio: 0.1
+encoder_output_dir: "./output/squeez_encoder"
 
 # Data generation
 distillation_model: "gpt-5.4"

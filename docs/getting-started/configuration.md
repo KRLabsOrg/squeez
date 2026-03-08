@@ -7,7 +7,7 @@ Squeez resolves backend configuration in order: **CLI args > env vars > config f
 Create a `squeez.yaml` in your project root, or use `configs/default.yaml`:
 
 ```yaml
-backend: "transformers"  # optional preference
+backend: null  # auto-detect from model; or "transformers", "vllm", "encoder"
 local_model_path: "./output/squeez_qwen"
 
 # Or remote API backend
@@ -29,7 +29,7 @@ Config files are searched in order:
 | `SQUEEZ_SERVER_URL` | OpenAI-compatible API URL |
 | `SQUEEZ_SERVER_MODEL` | Remote model ID on that server |
 | `SQUEEZ_API_KEY` | API key (also checks `OPENAI_API_KEY`) |
-| `SQUEEZ_BACKEND` | Optional backend preference: `transformers` or `vllm` |
+| `SQUEEZ_BACKEND` | Optional backend preference: `transformers`, `vllm`, or `encoder` |
 
 ```bash
 export SQUEEZ_LOCAL_MODEL=./output/squeez_qwen

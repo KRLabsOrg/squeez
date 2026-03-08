@@ -33,6 +33,11 @@ local = [
     "transformers>=5.0.0",
     "peft>=0.7.0",
 ]
+encoder = [
+    "torch>=2.1.0",
+    "transformers>=5.0.0",
+    "datasets>=2.14.0",
+]
 train = [
     "squeez[local]",
     "datasets>=2.14.0",
@@ -41,6 +46,7 @@ train = [
 ]
 all = [
     "squeez[train]",
+    "squeez[encoder]",
 ]
 dev = [
     "squeez[all]",

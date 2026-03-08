@@ -169,6 +169,7 @@ def train(args: argparse.Namespace):
         "save_total_limit": config.get("save_total_limit", 3),
         "bf16": True,
         "optim": "adamw_8bit",
+        "prediction_loss_only": True,
         "report_to": "none",
         "seed": 42,
         "dataset_num_proc": 1,

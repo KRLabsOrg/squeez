@@ -1,8 +1,9 @@
 """Runtime tool output extractor for agent integration.
 
-Two backends:
+Three backends:
 - vLLM: connects to a running OpenAI-compatible server (fast, production)
-- transformers: loads model locally (no server needed)
+- transformers: loads generative model locally (no server needed)
+- encoder: loads discriminative encoder model for line classification
 """
 
 import argparse
@@ -68,19 +69,38 @@ def _format_prompt(task: str, tool_output: str) -> str:
     )
 
 
+def _is_encoder_model(model_path: str) -> bool:
+    """Check if a model path contains a squeez-encoder model."""
+    import json
+
+    config_path = Path(model_path) / "config.json"
+    if not config_path.exists():
+        return False
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        return config.get("model_type") == "squeez-encoder"
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 class ToolOutputExtractor:
     """Extract relevant lines from tool output using a fine-tuned model.
 
-    Supports two backends:
+    Supports three backends:
     - vLLM/OpenAI-compatible server: pass base_url
-    - Local transformers: pass model_path
+    - Local transformers (generative): pass model_path
+    - Encoder (discriminative): auto-detected from model config, or backend="encoder"
 
     Usage:
         # vLLM (connects to running server)
         extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1")
 
-        # Local
+        # Local generative
         extractor = ToolOutputExtractor(model_path="./output/qwen-lora")
+
+        # Encoder (auto-detected)
+        extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
 
         filtered = extractor.extract(task="Fix the bug", tool_output=raw)
     """
@@ -118,7 +138,11 @@ class ToolOutputExtractor:
                 config, "local_model_path", "model_path"
             )
 
-        if preferred_backend == "vllm":
+        if preferred_backend == "encoder":
+            if not model_path:
+                raise ValueError("Backend is set to encoder, but no local model was configured.")
+            self._init_encoder(model_path, device)
+        elif preferred_backend == "vllm":
             if not base_url:
                 raise ValueError("Backend is set to vllm, but no server URL was configured.")
             self._init_vllm(base_url, model_name)
@@ -131,7 +155,11 @@ class ToolOutputExtractor:
         elif base_url:
             self._init_vllm(base_url, model_name)
         elif model_path:
-            self._init_transformers(model_path, device)
+            # Auto-detect encoder vs generative from model config
+            if _is_encoder_model(model_path):
+                self._init_encoder(model_path, device)
+            else:
+                self._init_transformers(model_path, device)
         else:
             raise ValueError(
                 "No backend configured. Set model_path or base_url via:\n"
@@ -139,6 +167,29 @@ class ToolOutputExtractor:
                 "  - Env vars: SQUEEZ_LOCAL_MODEL or SQUEEZ_SERVER_URL\n"
                 "  - Config file: squeez.yaml or configs/default.yaml"
             )
+
+    def _init_encoder(self, model_path: str, device: str):
+        """Initialize encoder-based backend (discriminative line classifier)."""
+        import torch
+        from transformers import AutoTokenizer
+
+        from squeez.encoder.model import LINE_SEP_TOKEN, SqueezEncoderForLineClassification
+
+        self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+        # Ensure LINE_SEP is in tokenizer
+        if self._tokenizer.convert_tokens_to_ids(LINE_SEP_TOKEN) == self._tokenizer.unk_token_id:
+            self._tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEP_TOKEN]})
+
+        self._model = SqueezEncoderForLineClassification.from_pretrained(
+            model_path, trust_remote_code=True
+        )
+
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = self._model.to(device)
+        self._model.eval()
+        self._backend = "encoder"
 
     def _init_vllm(self, base_url: str, model_name: str | None):
         """Initialize OpenAI-compatible backend (vLLM, Groq, etc.)."""
@@ -193,6 +244,9 @@ class ToolOutputExtractor:
         Returns:
             Filtered output containing only relevant lines
         """
+        if self._backend == "encoder":
+            return self._extract_encoder(task, tool_output)
+
         if self._backend == "vllm":
             raw = self._extract_vllm(task, tool_output, max_new_tokens, temperature)
         else:
@@ -207,6 +261,15 @@ class ToolOutputExtractor:
             return "\n".join(lines)
         except (json.JSONDecodeError, TypeError):
             return raw
+
+    def _extract_encoder(self, task: str, tool_output: str) -> str:
+        """Extract using encoder-based line classifier."""
+        lines = self._model.extract(
+            task=task,
+            tool_output=tool_output,
+            tokenizer=self._tokenizer,
+        )
+        return "\n".join(lines)
 
     def _extract_vllm(
         self, task: str, tool_output: str, max_new_tokens: int, temperature: float
