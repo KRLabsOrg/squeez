@@ -47,14 +47,19 @@ def _prepare_text_tokenizer(model_name: str, tokenizer):
         logger.info("Extracting text tokenizer from VL processor")
         tokenizer = tokenizer.tokenizer
 
-    im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    im_end_token = "<|im_end|>"
+    im_end_id = tokenizer.convert_tokens_to_ids(im_end_token)
     unk_id = getattr(tokenizer, "unk_token_id", None)
-    if tokenizer.eos_token in {None, "<EOS_TOKEN>"} and im_end_id is not None and im_end_id != unk_id:
-        tokenizer.eos_token = "<|im_end|>"
+    if im_end_id is not None and im_end_id != unk_id:
+        tokenizer.eos_token = im_end_token
         tokenizer.eos_token_id = im_end_id
+        if hasattr(tokenizer, "init_kwargs"):
+            tokenizer.init_kwargs["eos_token"] = im_end_token
 
     if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
-        tokenizer.chat_template = tokenizer.chat_template.replace("<EOS_TOKEN>", tokenizer.eos_token)
+        tokenizer.chat_template = tokenizer.chat_template.replace(
+            "<EOS_TOKEN>", tokenizer.eos_token
+        )
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -66,15 +71,25 @@ def _prepare_text_tokenizer(model_name: str, tokenizer):
             f"Current eos_token={tokenizer.eos_token!r}, eos_token_id={tokenizer.eos_token_id!r}."
         )
 
+    logger.info(
+        "Using tokenizer %s with eos_token=%r (id=%s), pad_token=%r (id=%s)",
+        tokenizer.__class__.__name__,
+        tokenizer.eos_token,
+        tokenizer.eos_token_id,
+        tokenizer.pad_token,
+        tokenizer.pad_token_id,
+    )
+
     return tokenizer
 
 
 def train(args: argparse.Namespace):
     """Run LoRA fine-tuning with Unsloth + SFTTrainer."""
+    from unsloth import FastLanguageModel  # noqa: I001
+    from unsloth.chat_templates import train_on_responses_only
+
     from datasets import Dataset
     from trl import SFTConfig, SFTTrainer
-    from unsloth import FastLanguageModel
-    from unsloth.chat_templates import train_on_responses_only
 
     config = load_config(args.config)
 
@@ -157,7 +172,6 @@ def train(args: argparse.Namespace):
         "report_to": "none",
         "seed": 42,
         "dataset_num_proc": 1,
-        "eos_token": tokenizer.eos_token,
     }
     if eval_dataset:
         sft_config_kwargs["eval_strategy"] = "steps"
