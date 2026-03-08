@@ -36,6 +36,8 @@ local = [
 train = [
     "squeez[local]",
     "datasets>=2.14.0",
+    "trl>=0.16.0",
+    "unsloth",
 ]
 all = [
     "squeez[train]",

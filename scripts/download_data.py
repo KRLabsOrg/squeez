@@ -1,5 +1,6 @@
 """Download the training dataset from HuggingFace."""
 
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -14,6 +15,10 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+    parser = argparse.ArgumentParser(description="Download squeez training data from HuggingFace")
+    parser.add_argument("--force", action="store_true", help="Re-download even if data exists")
+    args = parser.parse_args()
+
     output_dir = Path("data")
     output_dir.mkdir(exist_ok=True)
 
@@ -21,8 +26,8 @@ def main():
     dev_path = output_dir / "dev.jsonl"
     test_path = output_dir / "test.jsonl"
 
-    if train_path.exists() and dev_path.exists() and test_path.exists():
-        logger.info("Data already downloaded. Delete data/ to re-download.")
+    if not args.force and train_path.exists() and dev_path.exists() and test_path.exists():
+        logger.info("Data already downloaded. Use --force to re-download.")
         return
 
     logger.info("Downloading dataset from HuggingFace...")

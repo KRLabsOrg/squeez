@@ -1,12 +1,11 @@
 """LoRA fine-tuning script for squeez.
 
-Fine-tunes Qwen 3.5 (or similar) with LoRA adapters.
-Uses Unsloth for optimized training when available, falls back to HF Trainer.
+Fine-tunes Qwen 3.5 (or similar) with LoRA adapters using Unsloth + SFTTrainer.
 """
 
 import argparse
+import json
 import logging
-from functools import partial
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -24,102 +23,28 @@ def load_config(config_path: str | None = None) -> dict:
     return {}
 
 
-def _try_unsloth():
-    """Check if Unsloth is available."""
-    try:
-        from unsloth import FastLanguageModel
-
-        return FastLanguageModel
-    except ImportError:
-        return None
-
-
-def _load_model_unsloth(
-    FastLanguageModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
-):
-    """Load model and tokenizer using Unsloth.
-
-    Uses FastLanguageModel (not FastModel) for text-only fine-tuning.
-    FastModel is for multimodal/VL or MoE variants and patches the tokenizer
-    with VL processing that breaks on text-only input.
-    """
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=model_name,
-        max_seq_length=max_length,
-        load_in_4bit=False,
-        load_in_16bit=True,
-        full_finetuning=False,
-    )
-
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=lora_r,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        bias="none",
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-        use_gradient_checkpointing="unsloth",
-        random_state=42,
-        max_seq_length=max_length,
-    )
-
-    return model, tokenizer
-
-
-def _load_model_transformers(model_name, lora_r, lora_alpha, lora_dropout):
-    """Load model and tokenizer using vanilla transformers + peft."""
-    import torch
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-    )
-    model = prepare_model_for_kbit_training(model)
-
-    lora_config = LoraConfig(
-        r=lora_r,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-    )
-    model = get_peft_model(model, lora_config)
-
-    return model, tokenizer
+def _load_dataset_for_sft(data_path: str) -> list[dict]:
+    """Load JSONL and concatenate prompt+response into a 'text' field."""
+    samples = []
+    with open(data_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                row = json.loads(line)
+                samples.append({"text": row["prompt"] + row["response"] + "<|im_end|>"})
+    logger.info(f"Loaded {len(samples)} samples from {data_path}")
+    return samples
 
 
 def train(args: argparse.Namespace):
-    """Run LoRA fine-tuning."""
-    import torch
-    from transformers import Trainer, TrainingArguments
-
-    from squeez.training.dataset import ExtractionSFTDataset, collate_fn
+    """Run LoRA fine-tuning with Unsloth + SFTTrainer."""
+    from datasets import Dataset
+    from trl import SFTConfig, SFTTrainer
+    from unsloth import FastLanguageModel
+    from unsloth.chat_templates import train_on_responses_only
 
     config = load_config(args.config)
 
-    # Resolve parameters (CLI args override config)
     model_name = args.base_model or config.get("model", "Qwen/Qwen3.5-2B")
     max_length = args.max_length or config.get("max_length", 16384)
     batch_size = args.batch_size or config.get("batch_size", 8)
@@ -128,42 +53,52 @@ def train(args: argparse.Namespace):
     epochs = args.epochs or config.get("num_epochs", 3)
     lora_r = args.lora_r or config.get("lora_r", 16)
     lora_alpha = args.lora_alpha or config.get("lora_alpha", 32)
-    lora_dropout = config.get("lora_dropout", 0.05)
+    lora_dropout = config.get("lora_dropout", 0)
     output_dir = args.output_dir or "output/squeez_qwen"
 
-    # Load model — prefer Unsloth if available
-    FastLanguageModel = _try_unsloth()
-    if FastLanguageModel and not args.no_unsloth:
-        logger.info(
-            f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})"
-        )
-        model, tokenizer = _load_model_unsloth(
-            FastLanguageModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
-        )
-    else:
-        if not args.no_unsloth:
-            logger.warning(
-                "Unsloth not installed, falling back to transformers. "
-                "Install with: pip install unsloth"
-            )
-        logger.info(f"Loading {model_name} with transformers (r={lora_r}, alpha={lora_alpha})")
-        model, tokenizer = _load_model_transformers(model_name, lora_r, lora_alpha, lora_dropout)
+    # 1. Load model
+    logger.info(f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})")
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=model_name,
+        max_seq_length=max_length,
+        load_in_4bit=False,
+        load_in_16bit=True,
+        full_finetuning=False,
+    )
+
+    # Qwen 3.5 returns a VLProcessor — extract the text tokenizer
+    if not hasattr(tokenizer, "encode") and hasattr(tokenizer, "tokenizer"):
+        logger.info("Extracting text tokenizer from VL processor")
+        tokenizer = tokenizer.tokenizer
+
+    # 2. Apply LoRA
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        bias="none",
+        target_modules="all-linear",
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+        max_seq_length=max_length,
+    )
+    model.print_trainable_parameters()
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    model.print_trainable_parameters()
-
-    # Load datasets
-    train_dataset = ExtractionSFTDataset(args.train_file, tokenizer, max_length)
+    # 3. Load datasets
+    train_data = _load_dataset_for_sft(args.train_file)
+    train_dataset = Dataset.from_list(train_data)
     eval_dataset = None
     if args.eval_file:
-        eval_dataset = ExtractionSFTDataset(args.eval_file, tokenizer, max_length)
+        eval_data = _load_dataset_for_sft(args.eval_file)
+        eval_dataset = Dataset.from_list(eval_data)
 
-    # Training arguments
-    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    training_args = TrainingArguments(
+    # 4. Configure SFTTrainer
+    training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=grad_accum,
@@ -171,33 +106,41 @@ def train(args: argparse.Namespace):
         num_train_epochs=epochs,
         warmup_ratio=config.get("warmup_ratio", 0.05),
         weight_decay=config.get("weight_decay", 0.01),
+        max_seq_length=max_length,
+        packing=False,
+        dataset_text_field="text",
         eval_strategy="steps" if eval_dataset else "no",
         eval_steps=config.get("eval_steps", 100) if eval_dataset else None,
         save_steps=config.get("save_steps", 100),
         save_total_limit=config.get("save_total_limit", 3),
         logging_steps=config.get("logging_steps", 25),
-        bf16=use_bf16,
-        fp16=not use_bf16 and torch.cuda.is_available(),
-        remove_unused_columns=False,
-        dataloader_pin_memory=True,
+        bf16=True,
+        optim="adamw_8bit",
         report_to="none",
         load_best_model_at_end=True if eval_dataset else False,
+        seed=42,
     )
 
-    # Trainer
-    trainer = Trainer(
+    trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        data_collator=partial(collate_fn, pad_token_id=tokenizer.pad_token_id),
+        processing_class=tokenizer,
     )
 
-    # Train
+    # 5. Mask prompt tokens — only train on assistant response
+    trainer = train_on_responses_only(
+        trainer,
+        instruction_part="<|im_start|>user\n",
+        response_part="<|im_start|>assistant\n",
+    )
+
+    # 6. Train
     logger.info("Starting training...")
     trainer.train()
 
-    # Save
+    # 7. Save
     logger.info(f"Saving model to {output_dir}")
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
@@ -227,9 +170,6 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--lora-r", type=int, default=None)
     parser.add_argument("--lora-alpha", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
-    parser.add_argument(
-        "--no-unsloth", action="store_true", help="Disable Unsloth even if installed"
-    )
     return parser
 
 
