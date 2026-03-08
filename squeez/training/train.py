@@ -51,8 +51,13 @@ def _load_model_unsloth(FastModel, model_name, max_length, lora_r, lora_alpha, l
         lora_dropout=lora_dropout,
         bias="none",
         target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         ],
         use_gradient_checkpointing="unsloth",
         random_state=42,
@@ -84,8 +89,13 @@ def _load_model_transformers(model_name, lora_r, lora_alpha, lora_dropout):
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         ],
     )
     model = get_peft_model(model, lora_config)
@@ -117,18 +127,20 @@ def train(args: argparse.Namespace):
     # Load model — prefer Unsloth if available
     FastModel = _try_unsloth()
     if FastModel and not args.no_unsloth:
-        logger.info(f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})")
+        logger.info(
+            f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})"
+        )
         model, tokenizer = _load_model_unsloth(
             FastModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
         )
     else:
         if not args.no_unsloth:
-            logger.warning("Unsloth not installed, falling back to transformers. "
-                           "Install with: pip install unsloth")
+            logger.warning(
+                "Unsloth not installed, falling back to transformers. "
+                "Install with: pip install unsloth"
+            )
         logger.info(f"Loading {model_name} with transformers (r={lora_r}, alpha={lora_alpha})")
-        model, tokenizer = _load_model_transformers(
-            model_name, lora_r, lora_alpha, lora_dropout
-        )
+        model, tokenizer = _load_model_transformers(model_name, lora_r, lora_alpha, lora_dropout)
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -208,7 +220,9 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--lora-r", type=int, default=None)
     parser.add_argument("--lora-alpha", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
-    parser.add_argument("--no-unsloth", action="store_true", help="Disable Unsloth even if installed")
+    parser.add_argument(
+        "--no-unsloth", action="store_true", help="Disable Unsloth even if installed"
+    )
     return parser
 
 
