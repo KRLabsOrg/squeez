@@ -122,7 +122,7 @@ def train(args: argparse.Namespace):
         "num_train_epochs": epochs,
         "warmup_ratio": config.get("warmup_ratio", 0.05),
         "weight_decay": config.get("weight_decay", 0.01),
-        "max_seq_length": max_length,
+        "max_length": max_length,
         "logging_steps": config.get("logging_steps", 25),
         "save_steps": config.get("save_steps", 100),
         "save_total_limit": config.get("save_total_limit", 3),
