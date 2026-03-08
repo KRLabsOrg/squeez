@@ -6,6 +6,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+DEV_RATIO = 0.05
+
 
 def main():
     from datasets import load_dataset
@@ -16,22 +18,36 @@ def main():
     output_dir.mkdir(exist_ok=True)
 
     train_path = output_dir / "train.jsonl"
-    eval_path = output_dir / "eval.jsonl"
+    dev_path = output_dir / "dev.jsonl"
+    test_path = output_dir / "test.jsonl"
 
-    if train_path.exists() and eval_path.exists():
+    if train_path.exists() and dev_path.exists() and test_path.exists():
         logger.info("Data already downloaded. Delete data/ to re-download.")
         return
 
     logger.info("Downloading dataset from HuggingFace...")
     ds = load_dataset("KRLabsOrg/tool-output-extraction-swebench")
 
-    for split, path in [("train", train_path), ("eval", eval_path)]:
-        logger.info(f"Writing {split} to {path}")
+    # Split HF train into train + dev (stratified by repo would be ideal,
+    # but a random split is fine since eval repos are already held out)
+    train_split = ds["train"].train_test_split(test_size=DEV_RATIO, seed=42)
+
+    splits = [
+        (train_split["train"], train_path, "train"),
+        (train_split["test"], dev_path, "dev"),
+        (ds["test"], test_path, "test"),
+    ]
+
+    for data, path, name in splits:
+        logger.info(f"Writing {name} to {path} ({len(data)} samples)")
         with open(path, "w") as f:
-            for sample in ds[split]:
+            for sample in data:
                 f.write(json.dumps(sample) + "\n")
 
-    logger.info(f"Done: {len(ds['train'])} train + {len(ds['eval'])} eval samples")
+    logger.info(
+        f"Done: {len(train_split['train'])} train / "
+        f"{len(train_split['test'])} dev / {len(ds['test'])} test"
+    )
 
 
 if __name__ == "__main__":
