@@ -23,7 +23,7 @@ def load_config(config_path: str | None = None) -> dict:
     return {}
 
 
-def _load_dataset_for_sft(data_path: str) -> list[dict]:
+def _load_dataset_for_sft(data_path: str, eos_token: str) -> list[dict]:
     """Load JSONL and concatenate prompt+response into a 'text' field."""
     samples = []
     with open(data_path) as f:
@@ -31,9 +31,42 @@ def _load_dataset_for_sft(data_path: str) -> list[dict]:
             line = line.strip()
             if line:
                 row = json.loads(line)
-                samples.append({"text": row["prompt"] + row["response"] + "<|im_end|>"})
+                samples.append({"text": row["prompt"] + row["response"] + eos_token})
     logger.info(f"Loaded {len(samples)} samples from {data_path}")
     return samples
+
+
+def _prepare_text_tokenizer(model_name: str, tokenizer):
+    """Normalize a tokenizer suitable for TRL text-only SFT."""
+    if hasattr(tokenizer, "image_processor"):
+        from transformers import AutoTokenizer
+
+        logger.info("Loading standalone text tokenizer for VL model")
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    elif not hasattr(tokenizer, "encode") and hasattr(tokenizer, "tokenizer"):
+        logger.info("Extracting text tokenizer from VL processor")
+        tokenizer = tokenizer.tokenizer
+
+    im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    unk_id = getattr(tokenizer, "unk_token_id", None)
+    if tokenizer.eos_token in {None, "<EOS_TOKEN>"} and im_end_id is not None and im_end_id != unk_id:
+        tokenizer.eos_token = "<|im_end|>"
+        tokenizer.eos_token_id = im_end_id
+
+    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+        tokenizer.chat_template = tokenizer.chat_template.replace("<EOS_TOKEN>", tokenizer.eos_token)
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    if tokenizer.eos_token in {None, "<EOS_TOKEN>"}:
+        raise ValueError(
+            f"Could not resolve a real eos_token for {model_name}. "
+            f"Current eos_token={tokenizer.eos_token!r}, eos_token_id={tokenizer.eos_token_id!r}."
+        )
+
+    return tokenizer
 
 
 def train(args: argparse.Namespace):
@@ -66,10 +99,7 @@ def train(args: argparse.Namespace):
         full_finetuning=False,
     )
 
-    # Qwen 3.5 returns a VLProcessor — extract the text tokenizer
-    if not hasattr(tokenizer, "encode") and hasattr(tokenizer, "tokenizer"):
-        logger.info("Extracting text tokenizer from VL processor")
-        tokenizer = tokenizer.tokenizer
+    tokenizer = _prepare_text_tokenizer(model_name, tokenizer)
 
     # 2. Apply LoRA
     model = FastLanguageModel.get_peft_model(
@@ -101,20 +131,12 @@ def train(args: argparse.Namespace):
     )
     model.print_trainable_parameters()
 
-    # Unsloth patches chat_template with <EOS_TOKEN> placeholder — replace with real token
-    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
-        tokenizer.chat_template = tokenizer.chat_template.replace("<EOS_TOKEN>", "<|im_end|>")
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-
     # 3. Load datasets
-    train_data = _load_dataset_for_sft(args.train_file)
+    train_data = _load_dataset_for_sft(args.train_file, tokenizer.eos_token)
     train_dataset = Dataset.from_list(train_data)
     eval_dataset = None
     if args.eval_file:
-        eval_data = _load_dataset_for_sft(args.eval_file)
+        eval_data = _load_dataset_for_sft(args.eval_file, tokenizer.eos_token)
         eval_dataset = Dataset.from_list(eval_data)
 
     # 4. Configure SFTTrainer
@@ -135,7 +157,7 @@ def train(args: argparse.Namespace):
         "report_to": "none",
         "seed": 42,
         "dataset_num_proc": 1,
-        "eos_token": "<|im_end|>",
+        "eos_token": tokenizer.eos_token,
     }
     if eval_dataset:
         sft_config_kwargs["eval_strategy"] = "steps"
