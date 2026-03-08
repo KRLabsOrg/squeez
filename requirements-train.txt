@@ -1,0 +1,7 @@
+unsloth==2026.3.4
+unsloth_zoo==2026.3.2
+trl==0.24.0
+transformers==5.2.0
+peft==0.18.1
+torch==2.10.0
+datasets==3.4.1

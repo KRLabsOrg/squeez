@@ -133,6 +133,12 @@ $ git log --oneline -25 | squeez "find the commit that changed the authenticatio
 pip install squeez
 ```
 
+For local model training, use the pinned stack in [requirements-train.txt](/Users/adamkovacs/projects/squeez/requirements-train.txt):
+
+```bash
+pip install -r requirements-train.txt
+```
+
 ## Quick Start
 
 ### CLI

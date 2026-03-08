@@ -10,6 +10,30 @@ python scripts/download_data.py
 
 This pulls the [SWE-bench tool output dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) into `data/train.jsonl` (7,148 samples) and `data/eval.jsonl` (436 samples).
 
+## Known-good environment
+
+This repo currently has a known-good training stack pinned in [requirements-train.txt](/Users/adamkovacs/projects/squeez/requirements-train.txt).
+
+Install it with:
+
+```bash
+pip install -r requirements-train.txt
+```
+
+Pinned versions:
+
+```txt
+unsloth==2026.3.4
+unsloth_zoo==2026.3.2
+trl==0.24.0
+transformers==5.2.0
+peft==0.18.1
+torch==2.10.0
+datasets==3.4.1
+```
+
+If training is already working on your machine, do not upgrade these packages casually.
+
 ## 2. Train
 
 ```bash
