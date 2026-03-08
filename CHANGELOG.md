@@ -2,6 +2,22 @@
 
 All notable changes to Squeez are documented here.
 
+## [0.1.2] - 2026-03-08
+
+### Fixed
+- **Chat template**: switched from custom `<|system|>`/`<|user|>`/`<|assistant|>` tokens to Qwen ChatML format (`<|im_start|>`/`<|im_end|>`) — critical for correct fine-tuning and inference
+- **Evaluation metrics**: replaced line-number-based metrics with span-level exact match, precision/recall/F1, partial overlap, and empty accuracy
+- **Dataset metadata**: recomputed `num_relevant_lines`, `num_total_lines`, and `compression_ratio` from actual response content
+
+### Changed
+- **Training**: added Unsloth support for memory-efficient LoRA training on Qwen 3.5 (falls back to vanilla transformers if not installed)
+- **Training config**: batch size 8, grad accum 4 (effective BS 32), max_length 16384, eval every 100 steps
+- **Data splits**: `download_data.py` now creates train/dev/test (dev split from train for checkpoint selection, test held out for final eval)
+
+### Added
+- **Data quality**: manually reviewed test split (55/436 corrected), traceback curation on train split (123/7148 corrected)
+- **Data quality docs**: new `docs/guide/data-quality.md` documenting the full QA pipeline
+
 ## [0.1.1] - 2026-03-08
 
 ### Changed
