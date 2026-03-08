@@ -139,7 +139,7 @@ def train(args: argparse.Namespace):
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=SFTConfig(**sft_config_kwargs),
