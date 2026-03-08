@@ -30,7 +30,7 @@ Dataset = "https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-sweb
 [project.optional-dependencies]
 local = [
     "torch>=2.1.0",
-    "transformers>=4.45.0",
+    "transformers>=5.0.0",
     "peft>=0.7.0",
 ]
 train = [

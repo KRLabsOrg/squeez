@@ -27,16 +27,23 @@ def load_config(config_path: str | None = None) -> dict:
 def _try_unsloth():
     """Check if Unsloth is available."""
     try:
-        from unsloth import FastModel
+        from unsloth import FastLanguageModel
 
-        return FastModel
+        return FastLanguageModel
     except ImportError:
         return None
 
 
-def _load_model_unsloth(FastModel, model_name, max_length, lora_r, lora_alpha, lora_dropout):
-    """Load model and tokenizer using Unsloth."""
-    model, tokenizer = FastModel.from_pretrained(
+def _load_model_unsloth(
+    FastLanguageModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
+):
+    """Load model and tokenizer using Unsloth.
+
+    Uses FastLanguageModel (not FastModel) for text-only fine-tuning.
+    FastModel is for multimodal/VL or MoE variants and patches the tokenizer
+    with VL processing that breaks on text-only input.
+    """
+    model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=model_name,
         max_seq_length=max_length,
         load_in_4bit=False,
@@ -44,7 +51,7 @@ def _load_model_unsloth(FastModel, model_name, max_length, lora_r, lora_alpha, l
         full_finetuning=False,
     )
 
-    model = FastModel.get_peft_model(
+    model = FastLanguageModel.get_peft_model(
         model,
         r=lora_r,
         lora_alpha=lora_alpha,
@@ -125,13 +132,13 @@ def train(args: argparse.Namespace):
     output_dir = args.output_dir or "output/squeez_qwen"
 
     # Load model — prefer Unsloth if available
-    FastModel = _try_unsloth()
-    if FastModel and not args.no_unsloth:
+    FastLanguageModel = _try_unsloth()
+    if FastLanguageModel and not args.no_unsloth:
         logger.info(
             f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})"
         )
         model, tokenizer = _load_model_unsloth(
-            FastModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
+            FastLanguageModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
         )
     else:
         if not args.no_unsloth:

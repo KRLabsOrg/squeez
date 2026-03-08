@@ -42,34 +42,32 @@ class ExtractionSFTDataset(Dataset):
         response = sample["response"]
 
         # Tokenize full sequence: prompt + response + eos
+        # Use .encode() to bypass Unsloth's patched __call__ which routes
+        # through multimodal (VL) processing and fails on text-only input.
         full_text = prompt + response + self.tokenizer.eos_token
-        encoding = self.tokenizer(
+        input_ids = self.tokenizer.encode(
             full_text,
             truncation=True,
             max_length=self.max_length,
-            padding=False,
-            return_tensors=None,
         )
 
         # Tokenize prompt alone to find where response starts
-        prompt_encoding = self.tokenizer(
+        prompt_ids = self.tokenizer.encode(
             prompt,
             truncation=True,
             max_length=self.max_length,
-            padding=False,
-            return_tensors=None,
         )
-        prompt_len = len(prompt_encoding["input_ids"])
+        prompt_len = len(prompt_ids)
 
         # Create labels: mask prompt tokens with -100
-        input_ids = encoding["input_ids"]
+        attention_mask = [1] * len(input_ids)
         labels = list(input_ids)
         for i in range(min(prompt_len, len(labels))):
             labels[i] = -100
 
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
-            "attention_mask": torch.tensor(encoding["attention_mask"], dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
         }
 
