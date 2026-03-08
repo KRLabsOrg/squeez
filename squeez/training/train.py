@@ -120,7 +120,7 @@ def train(args: argparse.Namespace):
         "gradient_accumulation_steps": grad_accum,
         "learning_rate": lr,
         "num_train_epochs": epochs,
-        "warmup_ratio": config.get("warmup_ratio", 0.05),
+        "warmup_steps": config.get("warmup_steps", 10),
         "weight_decay": config.get("weight_decay", 0.01),
         "max_length": max_length,
         "logging_steps": config.get("logging_steps", 25),
@@ -131,6 +131,7 @@ def train(args: argparse.Namespace):
         "report_to": "none",
         "seed": 42,
         "dataset_num_proc": 1,
+        "eos_token": "<|im_end|>",
     }
     if eval_dataset:
         sft_config_kwargs["eval_strategy"] = "steps"
