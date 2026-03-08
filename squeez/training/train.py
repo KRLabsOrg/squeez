@@ -1,7 +1,7 @@
 """LoRA fine-tuning script for squeez.
 
-Fine-tunes Qwen 3.5 2B (or similar) with LoRA adapters using
-the HuggingFace Trainer on SFT-formatted data.
+Fine-tunes Qwen 3.5 (or similar) with LoRA adapters.
+Uses Unsloth for optimized training when available, falls back to HF Trainer.
 """
 
 import argparse
@@ -24,42 +24,51 @@ def load_config(config_path: str | None = None) -> dict:
     return {}
 
 
-def train(args: argparse.Namespace):
-    """Run LoRA fine-tuning."""
-    import torch
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        Trainer,
-        TrainingArguments,
+def _try_unsloth():
+    """Check if Unsloth is available."""
+    try:
+        from unsloth import FastModel
+
+        return FastModel
+    except ImportError:
+        return None
+
+
+def _load_model_unsloth(FastModel, model_name, max_length, lora_r, lora_alpha, lora_dropout):
+    """Load model and tokenizer using Unsloth."""
+    model, tokenizer = FastModel.from_pretrained(
+        model_name=model_name,
+        max_seq_length=max_length,
+        load_in_4bit=False,
+        load_in_16bit=True,
+        full_finetuning=False,
     )
 
-    from squeez.training.dataset import ExtractionSFTDataset, collate_fn
+    model = FastModel.get_peft_model(
+        model,
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        bias="none",
+        target_modules=[
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ],
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+        max_seq_length=max_length,
+    )
 
-    config = load_config(args.config)
+    return model, tokenizer
 
-    # Resolve parameters (CLI args override config)
-    model_name = args.base_model or config.get("model", "Qwen/Qwen3.5-2B")
-    max_length = args.max_length or config.get("max_length", 4096)
-    batch_size = args.batch_size or config.get("batch_size", 2)
-    grad_accum = args.gradient_accumulation_steps or config.get("gradient_accumulation_steps", 8)
-    lr = args.lr or config.get("learning_rate", 2e-4)
-    epochs = args.epochs or config.get("num_epochs", 3)
-    lora_r = args.lora_r or config.get("lora_r", 16)
-    lora_alpha = args.lora_alpha or config.get("lora_alpha", 32)
-    output_dir = args.output_dir or "output/squeez_qwen"
 
-    logger.info(f"Training {model_name} with LoRA (r={lora_r}, alpha={lora_alpha})")
-    logger.info(f"Output: {output_dir}")
+def _load_model_transformers(model_name, lora_r, lora_alpha, lora_dropout):
+    """Load model and tokenizer using vanilla transformers + peft."""
+    import torch
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    # Load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
@@ -68,24 +77,63 @@ def train(args: argparse.Namespace):
     )
     model = prepare_model_for_kbit_training(model)
 
-    # Apply LoRA
     lora_config = LoraConfig(
         r=lora_r,
         lora_alpha=lora_alpha,
-        lora_dropout=config.get("lora_dropout", 0.05),
+        lora_dropout=lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
         ],
     )
     model = get_peft_model(model, lora_config)
+
+    return model, tokenizer
+
+
+def train(args: argparse.Namespace):
+    """Run LoRA fine-tuning."""
+    import torch
+    from transformers import Trainer, TrainingArguments
+
+    from squeez.training.dataset import ExtractionSFTDataset, collate_fn
+
+    config = load_config(args.config)
+
+    # Resolve parameters (CLI args override config)
+    model_name = args.base_model or config.get("model", "Qwen/Qwen3.5-2B")
+    max_length = args.max_length or config.get("max_length", 16384)
+    batch_size = args.batch_size or config.get("batch_size", 8)
+    grad_accum = args.gradient_accumulation_steps or config.get("gradient_accumulation_steps", 4)
+    lr = args.lr or config.get("learning_rate", 2e-4)
+    epochs = args.epochs or config.get("num_epochs", 3)
+    lora_r = args.lora_r or config.get("lora_r", 16)
+    lora_alpha = args.lora_alpha or config.get("lora_alpha", 32)
+    lora_dropout = config.get("lora_dropout", 0.05)
+    output_dir = args.output_dir or "output/squeez_qwen"
+
+    # Load model — prefer Unsloth if available
+    FastModel = _try_unsloth()
+    if FastModel and not args.no_unsloth:
+        logger.info(f"Loading {model_name} with Unsloth (bf16 LoRA, r={lora_r}, alpha={lora_alpha})")
+        model, tokenizer = _load_model_unsloth(
+            FastModel, model_name, max_length, lora_r, lora_alpha, lora_dropout
+        )
+    else:
+        if not args.no_unsloth:
+            logger.warning("Unsloth not installed, falling back to transformers. "
+                           "Install with: pip install unsloth")
+        logger.info(f"Loading {model_name} with transformers (r={lora_r}, alpha={lora_alpha})")
+        model, tokenizer = _load_model_transformers(
+            model_name, lora_r, lora_alpha, lora_dropout
+        )
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
     model.print_trainable_parameters()
 
     # Load datasets
@@ -105,10 +153,10 @@ def train(args: argparse.Namespace):
         warmup_ratio=config.get("warmup_ratio", 0.05),
         weight_decay=config.get("weight_decay", 0.01),
         eval_strategy="steps" if eval_dataset else "no",
-        eval_steps=config.get("eval_steps", 500) if eval_dataset else None,
-        save_steps=config.get("save_steps", 500),
+        eval_steps=config.get("eval_steps", 100) if eval_dataset else None,
+        save_steps=config.get("save_steps", 100),
         save_total_limit=config.get("save_total_limit", 3),
-        logging_steps=config.get("logging_steps", 50),
+        logging_steps=config.get("logging_steps", 25),
         bf16=use_bf16,
         fp16=not use_bf16 and torch.cuda.is_available(),
         remove_unused_columns=False,
@@ -143,7 +191,7 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
         parser = argparse.ArgumentParser(description="Train tool output extractor with LoRA")
 
     parser.add_argument("--train-file", required=True, help="Path to train.jsonl")
-    parser.add_argument("--eval-file", default=None, help="Path to eval.jsonl")
+    parser.add_argument("--eval-file", default=None, help="Path to dev.jsonl")
     parser.add_argument(
         "--base-model",
         "--model",
@@ -160,6 +208,7 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--lora-r", type=int, default=None)
     parser.add_argument("--lora-alpha", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
+    parser.add_argument("--no-unsloth", action="store_true", help="Disable Unsloth even if installed")
     return parser
 
 
