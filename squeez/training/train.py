@@ -78,7 +78,23 @@ def train(args: argparse.Namespace):
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         bias="none",
-        target_modules="all-linear",
+        target_modules=[
+            # Standard attention layers (every 4th layer)
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            # Gated DeltaNet layers (3 out of every 4 layers)
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_b",
+            "in_proj_a",
+            "out_proj",
+            # MLP (all layers)
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
         use_gradient_checkpointing="unsloth",
         random_state=42,
         max_seq_length=max_length,
@@ -98,35 +114,35 @@ def train(args: argparse.Namespace):
         eval_dataset = Dataset.from_list(eval_data)
 
     # 4. Configure SFTTrainer
-    training_args = SFTConfig(
-        output_dir=output_dir,
-        per_device_train_batch_size=batch_size,
-        gradient_accumulation_steps=grad_accum,
-        learning_rate=lr,
-        num_train_epochs=epochs,
-        warmup_ratio=config.get("warmup_ratio", 0.05),
-        weight_decay=config.get("weight_decay", 0.01),
-        max_seq_length=max_length,
-        packing=False,
-        dataset_text_field="text",
-        eval_strategy="steps" if eval_dataset else "no",
-        eval_steps=config.get("eval_steps", 100) if eval_dataset else None,
-        save_steps=config.get("save_steps", 100),
-        save_total_limit=config.get("save_total_limit", 3),
-        logging_steps=config.get("logging_steps", 25),
-        bf16=True,
-        optim="adamw_8bit",
-        report_to="none",
-        load_best_model_at_end=True if eval_dataset else False,
-        seed=42,
-    )
+    sft_config_kwargs = {
+        "output_dir": output_dir,
+        "per_device_train_batch_size": batch_size,
+        "gradient_accumulation_steps": grad_accum,
+        "learning_rate": lr,
+        "num_train_epochs": epochs,
+        "warmup_ratio": config.get("warmup_ratio", 0.05),
+        "weight_decay": config.get("weight_decay", 0.01),
+        "max_seq_length": max_length,
+        "logging_steps": config.get("logging_steps", 25),
+        "save_steps": config.get("save_steps", 100),
+        "save_total_limit": config.get("save_total_limit", 3),
+        "bf16": True,
+        "optim": "adamw_8bit",
+        "report_to": "none",
+        "seed": 42,
+        "dataset_num_proc": 1,
+    }
+    if eval_dataset:
+        sft_config_kwargs["eval_strategy"] = "steps"
+        sft_config_kwargs["eval_steps"] = config.get("eval_steps", 100)
+        sft_config_kwargs["load_best_model_at_end"] = True
 
     trainer = SFTTrainer(
         model=model,
-        args=training_args,
+        tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        processing_class=tokenizer,
+        args=SFTConfig(**sft_config_kwargs),
     )
 
     # 5. Mask prompt tokens — only train on assistant response
