@@ -101,6 +101,10 @@ def train(args: argparse.Namespace):
     )
     model.print_trainable_parameters()
 
+    # Unsloth patches chat_template with <EOS_TOKEN> placeholder — replace with real token
+    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+        tokenizer.chat_template = tokenizer.chat_template.replace("<EOS_TOKEN>", "<|im_end|>")
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
