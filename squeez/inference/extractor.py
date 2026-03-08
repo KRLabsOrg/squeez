@@ -57,11 +57,15 @@ def _first_env_value(*names: str) -> str | None:
 
 
 def _format_prompt(task: str, tool_output: str) -> str:
-    """Format the input prompt."""
+    """Format the input prompt using Qwen ChatML template."""
     if len(task) > 3000:
         task = task[:3000] + "..."
 
-    return f"<|system|>\n{SYSTEM_PROMPT}\n<|user|>\nTask: {task}\n\n{tool_output}\n<|assistant|>\n"
+    return (
+        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
+        f"<|im_start|>user\nTask: {task}\n\n{tool_output}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
 
 
 class ToolOutputExtractor:

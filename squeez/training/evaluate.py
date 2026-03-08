@@ -270,7 +270,7 @@ def evaluate_model(
         all_metrics["rouge_l"].append(rouge)
 
         # Compression
-        original_output = prompt.split("<|user|>")[-1].split("<|assistant|>")[0]
+        original_output = prompt.split("<|im_start|>user\n")[-1].split("<|im_end|>")[0]
         compression = compute_compression_ratio(original_output, pred_text)
         all_metrics["compression"].append(compression)
 

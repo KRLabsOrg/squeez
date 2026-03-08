@@ -80,6 +80,7 @@ nav:
     - Training: guide/training.md
     - Data Generation: guide/data-generation.md
     - Dataset: guide/dataset.md
+    - Data Quality: guide/data-quality.md
   - API Reference:
     - Extractor: api/extractor.md
     - Training: api/training.md

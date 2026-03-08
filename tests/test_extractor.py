@@ -9,9 +9,10 @@ def test_format_prompt_basic():
     assert "Fix the bug" in prompt
     assert "class Foo:" in prompt
     assert SYSTEM_PROMPT in prompt
-    assert "<|system|>" in prompt
-    assert "<|user|>" in prompt
-    assert "<|assistant|>" in prompt
+    assert "<|im_start|>system" in prompt
+    assert "<|im_start|>user" in prompt
+    assert "<|im_start|>assistant" in prompt
+    assert "<|im_end|>" in prompt
 
 
 def test_format_prompt_truncates_long_task():
@@ -137,23 +138,39 @@ class TestEvaluate:
         ratio = compute_compression_ratio("a", "a")
         assert ratio == 0.0
 
-    def test_extract_line_numbers(self):
-        from squeez.training.evaluate import extract_line_numbers
+    def test_parse_relevant_lines(self):
+        from squeez.training.evaluate import _parse_relevant_lines
 
-        lines = extract_line_numbers("1: foo\n2: bar\n5: baz")
-        assert lines == {1, 2, 5}
+        lines = _parse_relevant_lines('{"relevant_lines": ["foo", "bar"]}')
+        assert lines == ["foo", "bar"]
 
-        lines = extract_line_numbers("no numbers here")
-        assert lines == set()
+        lines = _parse_relevant_lines('{"relevant_lines": []}')
+        assert lines == []
 
-    def test_line_level_metrics(self):
-        from squeez.training.evaluate import compute_line_level_metrics
+        # Fallback to raw text
+        lines = _parse_relevant_lines("foo\nbar\nbaz")
+        assert lines == ["foo", "bar", "baz"]
 
-        metrics = compute_line_level_metrics("1: a\n2: b\n3: c", "1: a\n2: b\n3: c")
+    def test_span_metrics(self):
+        from squeez.training.evaluate import compute_span_metrics
+
+        metrics = compute_span_metrics(["a", "b", "c"], ["a", "b", "c"])
         assert metrics["precision"] == 1.0
         assert metrics["recall"] == 1.0
         assert metrics["f1"] == 1.0
+        assert metrics["exact_match"] == 1.0
 
-        metrics = compute_line_level_metrics("1: a", "1: a\n2: b")
+        metrics = compute_span_metrics(["a"], ["a", "b"])
         assert metrics["precision"] == 1.0
         assert metrics["recall"] == 0.5
+
+        metrics = compute_span_metrics([], [])
+        assert metrics["exact_match"] == 1.0
+
+    def test_empty_accuracy(self):
+        from squeez.training.evaluate import compute_empty_accuracy
+
+        assert compute_empty_accuracy([], [])["category"] == "true_negative"
+        assert compute_empty_accuracy(["a"], ["a"])["category"] == "true_positive"
+        assert compute_empty_accuracy(["a"], [])["category"] == "false_positive"
+        assert compute_empty_accuracy([], ["a"])["category"] == "false_negative"

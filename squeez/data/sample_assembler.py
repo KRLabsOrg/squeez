@@ -13,11 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 def _format_prompt(issue_text: str, output: str) -> str:
-    """Format the input prompt for the extraction model."""
+    """Format the input prompt using Qwen ChatML template."""
     if len(issue_text) > 3000:
         issue_text = issue_text[:3000] + "..."
 
-    return f"<|system|>\n{SYSTEM_PROMPT}\n<|user|>\nTask: {issue_text}\n\n{output}\n<|assistant|>\n"
+    return (
+        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
+        f"<|im_start|>user\nTask: {issue_text}\n\n{output}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
 
 
 def _get_repo_from_instance_id(instance_id: str) -> str:
@@ -90,15 +94,22 @@ def assemble_samples(
             ]
             response = json.dumps({"relevant_lines": relevant})
 
+        # Compute metadata from actual response content
+        parsed = json.loads(response)
+        actual_relevant = len(parsed["relevant_lines"])
+        total_lines = len(sample["output"].split("\n")) if sample.get("output") else 0
+
         assembled = {
             "prompt": prompt,
             "response": response,
             "metadata": {
                 "instance_id": instance_id,
                 "tool_type": sample["tool_type"],
-                "compression_ratio": sample.get("compression_ratio", 0),
-                "num_total_lines": sample.get("num_total_lines", 0),
-                "num_relevant_lines": sample.get("num_relevant_lines", 0),
+                "num_total_lines": total_lines,
+                "num_relevant_lines": actual_relevant,
+                "compression_ratio": round(1 - actual_relevant / total_lines, 4)
+                if total_lines > 0
+                else 0,
             },
         }
 
