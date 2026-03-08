@@ -2,6 +2,15 @@
 
 All notable changes to Squeez are documented here.
 
+## [0.1.1] - 2026-03-08
+
+### Changed
+- Made `torch`, `transformers`, `peft`, and `datasets` optional dependencies
+  - `pip install squeez` — lightweight install for API-only usage (vLLM, Groq, etc.)
+  - `pip install squeez[local]` — adds local inference deps (`torch`, `transformers`, `peft`)
+  - `pip install squeez[train]` — adds training deps (`datasets`)
+  - `pip install squeez[all]` — everything
+
 ## [0.1.0] - 2026-03-07
 
 ### Added
