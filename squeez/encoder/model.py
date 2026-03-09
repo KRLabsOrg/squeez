@@ -63,6 +63,7 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
     """
 
     config_class = SqueezEncoderConfig
+    supports_gradient_checkpointing = True
 
     def __init__(self, config: SqueezEncoderConfig):
         super().__init__(config)
@@ -137,6 +138,11 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def _set_gradient_checkpointing(self, module, value: bool = False):
+        """Delegate gradient checkpointing to the wrapped encoder when supported."""
+        if module is self.encoder and hasattr(module, "gradient_checkpointing"):
+            module.gradient_checkpointing = value
 
     # ------------------------------------------------------------------
     # Inference helpers
