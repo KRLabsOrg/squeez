@@ -8,12 +8,14 @@ server_model: null  # optional remote model id when using a server
 model: "Qwen/Qwen3.5-2B"
 max_length: 16384
 batch_size: 8
+eval_batch_size: 1
 gradient_accumulation_steps: 4
 learning_rate: 2.0e-4
 num_epochs: 3
 warmup_ratio: 0.05
 weight_decay: 0.01
 eval_steps: 100
+eval_accumulation_steps: 1
 save_steps: 100
 save_total_limit: 3
 logging_steps: 25

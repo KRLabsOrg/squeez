@@ -96,6 +96,7 @@ def train(args: argparse.Namespace):
     model_name = args.base_model or config.get("model", "Qwen/Qwen3.5-2B")
     max_length = args.max_length or config.get("max_length", 16384)
     batch_size = args.batch_size or config.get("batch_size", 8)
+    eval_batch_size = config.get("eval_batch_size", 1)
     grad_accum = args.gradient_accumulation_steps or config.get("gradient_accumulation_steps", 4)
     lr = args.lr or config.get("learning_rate", 2e-4)
     epochs = args.epochs or config.get("num_epochs", 3)
@@ -158,6 +159,10 @@ def train(args: argparse.Namespace):
     sft_config_kwargs = {
         "output_dir": output_dir,
         "per_device_train_batch_size": batch_size,
+        # Eval on long-context causal LMs can OOM because the Trainer path
+        # materializes full [batch, seq, vocab] logits and Accelerate upcasts
+        # them to fp32 during evaluation. Keep eval microbatches tiny by default.
+        "per_device_eval_batch_size": eval_batch_size,
         "gradient_accumulation_steps": grad_accum,
         "learning_rate": lr,
         "num_train_epochs": epochs,
@@ -170,6 +175,7 @@ def train(args: argparse.Namespace):
         "bf16": True,
         "optim": "adamw_8bit",
         "prediction_loss_only": True,
+        "eval_accumulation_steps": config.get("eval_accumulation_steps", 1),
         "report_to": "none",
         "seed": 42,
         "dataset_num_proc": 1,
