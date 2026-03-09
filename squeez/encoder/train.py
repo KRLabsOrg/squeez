@@ -37,6 +37,8 @@ def train(
     save_total_limit: int = 3,
     fp16: bool = False,
     bf16: bool = False,
+    eval_batch_size: int | None = None,
+    eval_accumulation_steps: int = 1,
 ) -> None:
     """Train the encoder line classifier."""
     import torch
@@ -81,6 +83,7 @@ def train(
 
     # Resize embeddings for the new [LINE_SEP] token
     model.encoder.resize_token_embeddings(len(tokenizer))
+    model.gradient_checkpointing_enable()
 
     # Load datasets
     logger.info(f"Loading train data from {train_file}")
@@ -102,7 +105,7 @@ def train(
         output_dir=output_dir,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=max(1, batch_size // 2),
+        per_device_eval_batch_size=eval_batch_size or max(1, batch_size // 2),
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
@@ -120,6 +123,8 @@ def train(
         metric_for_best_model="eval_loss" if eval_dataset else None,
         report_to="none",
         dataloader_num_workers=0,
+        eval_accumulation_steps=eval_accumulation_steps,
+        gradient_checkpointing=True,
         remove_unused_columns=False,
     )
 
@@ -158,15 +163,17 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
 
     parser.add_argument("--train-file", required=True, help="Path to encoder_train.jsonl")
     parser.add_argument("--eval-file", default=None, help="Path to encoder_dev.jsonl")
-    parser.add_argument("--base-model", default="jhu-clsp/mmBERT-base", help="Base encoder model")
-    parser.add_argument("--output-dir", default="output/squeez_encoder")
-    parser.add_argument("--max-length", type=int, default=8192)
-    parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=2e-5)
-    parser.add_argument("--num-epochs", type=int, default=5)
-    parser.add_argument("--warmup-ratio", type=float, default=0.1)
-    parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--base-model", default=None, help="Base encoder model")
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--max-length", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--eval-batch-size", type=int, default=None)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
+    parser.add_argument("--eval-accumulation-steps", type=int, default=None)
+    parser.add_argument("--learning-rate", type=float, default=None)
+    parser.add_argument("--num-epochs", type=int, default=None)
+    parser.add_argument("--warmup-ratio", type=float, default=None)
+    parser.add_argument("--weight-decay", type=float, default=None)
     parser.add_argument("--eval-steps", type=int, default=200)
     parser.add_argument("--save-steps", type=int, default=200)
     parser.add_argument("--logging-steps", type=int, default=25)
@@ -184,23 +191,37 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    import yaml
+
+    default_config_path = Path(__file__).parent.parent.parent / "configs" / "default.yaml"
+    config = {}
+    if default_config_path.exists():
+        with open(default_config_path) as f:
+            config = yaml.safe_load(f) or {}
+
     train(
         train_file=args.train_file,
         eval_file=args.eval_file,
-        base_model=args.base_model,
-        output_dir=args.output_dir,
-        max_length=args.max_length,
-        batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        learning_rate=args.learning_rate,
-        num_epochs=args.num_epochs,
-        warmup_ratio=args.warmup_ratio,
-        weight_decay=args.weight_decay,
+        base_model=args.base_model or config.get("encoder_base_model", "jhu-clsp/mmBERT-base"),
+        output_dir=args.output_dir or config.get("encoder_output_dir", "output/squeez_encoder"),
+        max_length=args.max_length or config.get("encoder_max_length", 8192),
+        batch_size=args.batch_size or config.get("encoder_batch_size", 2),
+        gradient_accumulation_steps=(
+            args.gradient_accumulation_steps or config.get("encoder_gradient_accumulation_steps", 8)
+        ),
+        learning_rate=args.learning_rate or config.get("encoder_learning_rate", 2e-5),
+        num_epochs=args.num_epochs or config.get("encoder_num_epochs", 5),
+        warmup_ratio=args.warmup_ratio or config.get("encoder_warmup_ratio", 0.1),
+        weight_decay=args.weight_decay or config.get("weight_decay", 0.01),
         eval_steps=args.eval_steps,
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         fp16=args.fp16,
         bf16=args.bf16,
+        eval_batch_size=args.eval_batch_size or config.get("encoder_eval_batch_size", 1),
+        eval_accumulation_steps=(
+            args.eval_accumulation_steps or config.get("encoder_eval_accumulation_steps", 1)
+        ),
     )
     return 0
 

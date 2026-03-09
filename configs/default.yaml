@@ -29,7 +29,9 @@ lora_dropout: 0
 encoder_base_model: "jhu-clsp/mmBERT-base"
 encoder_max_length: 8192
 encoder_batch_size: 2
+encoder_eval_batch_size: 1
 encoder_gradient_accumulation_steps: 8
+encoder_eval_accumulation_steps: 1
 encoder_learning_rate: 2.0e-5
 encoder_num_epochs: 5
 encoder_warmup_ratio: 0.1
