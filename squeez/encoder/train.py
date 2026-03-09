@@ -98,7 +98,6 @@ def train(
     data_collator = DataCollatorForTokenClassification(
         tokenizer=tokenizer,
         padding=True,
-        max_length=max_length,
     )
 
     # Training arguments

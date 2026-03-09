@@ -23,6 +23,7 @@ import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
 
+from squeez.encoder.chunking import chunk_output_lines, encode_text
 from squeez.encoder.model import LINE_SEP_TOKEN
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ class LineClassificationDataset(Dataset):
         # covering one window of lines that fits within max_length.
         self._windows: list[tuple[list[int], list[list[int]], list[bool]]] = []
         n_expanded = 0
+        n_skipped_empty = 0
 
         for sample in raw_samples:
             task = sample["task"]
@@ -116,23 +118,20 @@ class LineClassificationDataset(Dataset):
             line_labels = _match_lines(output_lines, relevant_lines)
 
             # Tokenize task, cap at half of max_length
-            task_ids = tokenizer.encode(
+            task_ids = encode_text(
+                tokenizer,
                 task,
-                add_special_tokens=False,
                 truncation=True,
                 max_length=self._max_task_tokens,
             )
 
-            # Tokenize each line
-            line_token_ids = [
-                tokenizer.encode(
-                    ln,
-                    add_special_tokens=False,
-                    truncation=True,
-                    max_length=self._max_line_tokens,
-                )
-                for ln in output_lines
-            ]
+            # Tokenize each line, chunking only pathological long lines.
+            line_token_ids, chunk_to_line = chunk_output_lines(
+                tokenizer,
+                output_lines,
+                max_tokens_per_chunk=self._max_line_tokens,
+            )
+            chunk_labels = [line_labels[line_idx] for line_idx in chunk_to_line]
 
             # overhead = [CLS] + task + [SEP] + ... + [SEP]
             prefix_len = 1 + len(task_ids) + 1
@@ -142,11 +141,15 @@ class LineClassificationDataset(Dataset):
             windows = self._build_windows(line_token_ids, budget)
 
             for start, end in windows:
+                window_line_token_ids = line_token_ids[start:end]
+                if not any(window_line_token_ids):
+                    n_skipped_empty += 1
+                    continue
                 self._windows.append(
                     (
                         task_ids,
-                        line_token_ids[start:end],
-                        line_labels[start:end],
+                        window_line_token_ids,
+                        chunk_labels[start:end],
                     )
                 )
 
@@ -156,7 +159,8 @@ class LineClassificationDataset(Dataset):
         logger.info(
             f"Loaded {len(raw_samples)} samples from {data_path} → "
             f"{len(self._windows)} windows "
-            f"({n_expanded} extra from sliding, max_length={max_length})"
+            f"({n_expanded} extra from sliding, {n_skipped_empty} empty windows skipped, "
+            f"max_length={max_length})"
         )
 
     # ------------------------------------------------------------------

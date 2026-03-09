@@ -18,6 +18,8 @@ import torch.nn as nn
 from transformers import AutoConfig, AutoModel, AutoTokenizer, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import TokenClassifierOutput
 
+from squeez.encoder.chunking import chunk_output_lines, encode_text
+
 logger = logging.getLogger(__name__)
 
 LINE_SEP_TOKEN = "[LINE_SEP]"
@@ -163,9 +165,9 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
         sep_id = tokenizer.sep_token_id
 
         # Tokenize task prefix (will be reused for every window)
-        task_ids = tokenizer.encode(
+        task_ids = encode_text(
+            tokenizer,
             task,
-            add_special_tokens=False,
             truncation=True,
             max_length=max(max_len - 3 - _MIN_LINE_BUDGET, 0),
         )
@@ -175,16 +177,14 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
         suffix_len = 1  # final SEP
         budget = max_len - prefix_len - suffix_len
 
-        # Tokenize each line
-        line_token_ids: list[list[int]] = []
-        for line in lines:
-            ids = tokenizer.encode(
-                line,
-                add_special_tokens=False,
-                truncation=True,
-                max_length=max(max_len - 4, 1),
-            )
-            line_token_ids.append(ids)
+        # Tokenize lines, chunking only pathological long lines.
+        line_token_ids, chunk_to_line = chunk_output_lines(
+            tokenizer,
+            lines,
+            max_tokens_per_chunk=max(max_len - 4, 1),
+        )
+        if not line_token_ids:
+            return []
 
         # Build windows
         windows = self._build_windows(line_token_ids, budget, window_overlap)
@@ -199,8 +199,9 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
 
             scores = self._predict_window(input_ids, attention_mask, line_sep_positions, sep_id)
             for i, score in enumerate(scores):
-                global_idx = start_idx + i
-                line_scores[global_idx] = max(line_scores[global_idx], score)
+                chunk_idx = start_idx + i
+                line_idx = chunk_to_line[chunk_idx]
+                line_scores[line_idx] = max(line_scores[line_idx], score)
 
         return [line for line, score in zip(lines, line_scores) if score >= threshold]
 
