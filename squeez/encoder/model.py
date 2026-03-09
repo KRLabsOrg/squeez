@@ -63,7 +63,6 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
     """
 
     config_class = SqueezEncoderConfig
-    supports_gradient_checkpointing = True
 
     def __init__(self, config: SqueezEncoderConfig):
         super().__init__(config)
@@ -139,11 +138,6 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    def _set_gradient_checkpointing(self, module, value: bool = False):
-        """Delegate gradient checkpointing to the wrapped encoder when supported."""
-        if module is self.encoder and hasattr(module, "gradient_checkpointing"):
-            module.gradient_checkpointing = value
-
     # ------------------------------------------------------------------
     # Inference helpers
     # ------------------------------------------------------------------
@@ -169,14 +163,12 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
         sep_id = tokenizer.sep_token_id
 
         # Tokenize task prefix (will be reused for every window)
-        task_ids = tokenizer.encode(task, add_special_tokens=False)
-
-        # Truncate task if it would leave too little room for lines
-        # overhead = [CLS] + [SEP] + [SEP]  (3 tokens)
-        max_task_tokens = max_len - 3 - _MIN_LINE_BUDGET
-        if max_task_tokens < 0:
-            max_task_tokens = 0
-        task_ids = task_ids[:max_task_tokens]
+        task_ids = tokenizer.encode(
+            task,
+            add_special_tokens=False,
+            truncation=True,
+            max_length=max(max_len - 3 - _MIN_LINE_BUDGET, 0),
+        )
 
         # Budget: [CLS] task [SEP] ... lines ... [SEP]
         prefix_len = 1 + len(task_ids) + 1  # CLS + task + SEP
@@ -186,7 +178,12 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
         # Tokenize each line
         line_token_ids: list[list[int]] = []
         for line in lines:
-            ids = tokenizer.encode(line, add_special_tokens=False)
+            ids = tokenizer.encode(
+                line,
+                add_special_tokens=False,
+                truncation=True,
+                max_length=max(max_len - 4, 1),
+            )
             line_token_ids.append(ids)
 
         # Build windows

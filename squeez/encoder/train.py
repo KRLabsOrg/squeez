@@ -83,7 +83,8 @@ def train(
 
     # Resize embeddings for the new [LINE_SEP] token
     model.encoder.resize_token_embeddings(len(tokenizer))
-    model.gradient_checkpointing_enable()
+    if hasattr(model.encoder, "gradient_checkpointing_enable"):
+        model.encoder.gradient_checkpointing_enable()
 
     # Load datasets
     logger.info(f"Loading train data from {train_file}")
@@ -124,7 +125,6 @@ def train(
         report_to="none",
         dataloader_num_workers=0,
         eval_accumulation_steps=eval_accumulation_steps,
-        gradient_checkpointing=True,
         remove_unused_columns=False,
     )
 

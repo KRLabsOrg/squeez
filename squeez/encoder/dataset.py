@@ -92,6 +92,8 @@ class LineClassificationDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.line_sep_id = tokenizer.convert_tokens_to_ids(LINE_SEP_TOKEN)
+        self._max_task_tokens = max_length // 2
+        self._max_line_tokens = max(max_length - 4, 1)
 
         raw_samples: list[dict] = []
         with open(data_path) as f:
@@ -114,11 +116,23 @@ class LineClassificationDataset(Dataset):
             line_labels = _match_lines(output_lines, relevant_lines)
 
             # Tokenize task, cap at half of max_length
-            task_ids = tokenizer.encode(task, add_special_tokens=False)
-            task_ids = task_ids[: max_length // 2]
+            task_ids = tokenizer.encode(
+                task,
+                add_special_tokens=False,
+                truncation=True,
+                max_length=self._max_task_tokens,
+            )
 
             # Tokenize each line
-            line_token_ids = [tokenizer.encode(ln, add_special_tokens=False) for ln in output_lines]
+            line_token_ids = [
+                tokenizer.encode(
+                    ln,
+                    add_special_tokens=False,
+                    truncation=True,
+                    max_length=self._max_line_tokens,
+                )
+                for ln in output_lines
+            ]
 
             # overhead = [CLS] + task + [SEP] + ... + [SEP]
             prefix_len = 1 + len(task_ids) + 1
