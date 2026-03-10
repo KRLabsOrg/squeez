@@ -57,15 +57,29 @@ def _first_env_value(*names: str) -> str | None:
     return None
 
 
-def _format_prompt(task: str, tool_output: str) -> str:
-    """Format the input prompt using Qwen ChatML template."""
+def _build_messages(task: str, tool_output: str) -> list[dict]:
+    """Build chat messages for extraction."""
     if len(task) > 3000:
         task = task[:3000] + "..."
 
+    user_content = (
+        f"<task>\n{task}\n</task>\n<tool_output>\n{tool_output}\n</tool_output>"
+        if task
+        else f"<tool_output>\n{tool_output}\n</tool_output>"
+    )
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def _format_prompt(task: str, tool_output: str) -> str:
+    """Format the input prompt using the ChatML template for local generation."""
+    messages = _build_messages(task, tool_output)
     return (
-        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
-        f"<|im_start|>user\n<task>\n{task}\n</task>\n"
-        f"<tool_output>\n{tool_output}\n</tool_output><|im_end|>\n"
+        f"<|im_start|>system\n{messages[0]['content']}<|im_end|>\n"
+        f"<|im_start|>user\n{messages[1]['content']}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
 
@@ -274,21 +288,11 @@ class ToolOutputExtractor:
         self, task: str, tool_output: str, max_new_tokens: int, temperature: float
     ) -> str:
         """Extract using OpenAI-compatible server (chat completions API)."""
-        if len(task) > 3000:
-            task = task[:3000] + "..."
-
-        user_content = (
-            f"<task>\n{task}\n</task>\n<tool_output>\n{tool_output}\n</tool_output>"
-            if task
-            else f"<tool_output>\n{tool_output}\n</tool_output>"
-        )
+        messages = _build_messages(task, tool_output)
 
         response = self._client.chat.completions.create(
             model=self._model_name,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
+            messages=messages,
             max_tokens=max_new_tokens,
             temperature=temperature,
         )

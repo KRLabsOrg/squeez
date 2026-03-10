@@ -26,7 +26,7 @@ def test_format_prompt_truncates_long_task():
 
 def test_format_prompt_empty_task():
     prompt = _format_prompt("", "some output")
-    assert "<task>\n\n</task>" in prompt
+    assert "<task>" not in prompt
     assert "some output" in prompt
 
 

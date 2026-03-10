@@ -42,6 +42,22 @@ def test_eval_parser_accepts_clear_and_legacy_model_flags():
     args = parser.parse_args(["--model-path", "./legacy-model", "--eval-file", "eval.jsonl"])
     assert args.extractor_model == "./legacy-model"
 
+    args = parser.parse_args(
+        ["--server-url", "http://localhost:8000/v1", "--eval-file", "eval.jsonl"]
+    )
+    assert args.server_url == "http://localhost:8000/v1"
+
+    args = parser.parse_args(
+        ["--base-url", "http://legacy.example/v1", "--eval-file", "eval.jsonl"]
+    )
+    assert args.server_url == "http://legacy.example/v1"
+
+    args = parser.parse_args(["--server-model", "squeez-remote", "--eval-file", "eval.jsonl"])
+    assert args.server_model == "squeez-remote"
+
+    args = parser.parse_args(["--model-name", "legacy-remote", "--eval-file", "eval.jsonl"])
+    assert args.server_model == "legacy-remote"
+
 
 def test_pipeline_parser_accepts_teacher_aliases():
     parser = build_pipeline_parser()

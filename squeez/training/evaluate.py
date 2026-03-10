@@ -11,6 +11,7 @@ Metrics:
 import argparse
 import json
 import logging
+import re
 import statistics
 
 logger = logging.getLogger(__name__)
@@ -160,38 +161,52 @@ def compute_compression_ratio(original: str, filtered: str) -> float:
     return round(1.0 - filt_lines / orig_lines, 4)
 
 
+def _parse_prompt_sections(prompt: str) -> tuple[str, str]:
+    """Extract task and tool output from the ChatML prompt."""
+    task_match = re.search(r"<task>\n(.*?)\n</task>", prompt, re.DOTALL)
+    output_match = re.search(r"<tool_output>\n(.*?)\n</tool_output>", prompt, re.DOTALL)
+    task = task_match.group(1) if task_match else ""
+    tool_output = output_match.group(1) if output_match else ""
+    return task, tool_output
+
+
 def evaluate_model(
-    model_path: str,
+    model_path: str | None,
     eval_file: str,
     max_samples: int | None = None,
     max_new_tokens: int = 1024,
+    server_url: str | None = None,
+    server_model: str | None = None,
+    temperature: float = 0.1,
 ) -> dict:
     """Evaluate the model on the eval set.
 
     Args:
-        model_path: Path to trained model
+        model_path: Path to trained model, if evaluating locally
         eval_file: Path to eval.jsonl
         max_samples: Maximum samples to evaluate
         max_new_tokens: Max tokens to generate
+        server_url: OpenAI-compatible server URL, if evaluating remotely
+        server_model: Remote model ID for the server backend
+        temperature: Generation temperature
 
     Returns:
         Dict with aggregate metrics
     """
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from squeez.inference.extractor import ToolOutputExtractor
 
-    logger.info(f"Loading model from {model_path}")
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
+    if not model_path and not server_url:
+        raise ValueError(
+            "Pass either model_path for local evaluation or server_url for remote evaluation."
+        )
+
+    target = server_url or model_path
+    logger.info(f"Loading extractor from {target}")
+    extractor = ToolOutputExtractor(
+        model_path=model_path,
+        base_url=server_url,
+        model_name=server_model,
     )
-    model.eval()
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
     # Load eval data
     samples = []
@@ -224,23 +239,13 @@ def evaluate_model(
     for i, sample in enumerate(samples):
         prompt = sample["prompt"]
         reference_raw = sample["response"]
+        task, tool_output = _parse_prompt_sections(prompt)
 
-        # Generate
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=16384)
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=0.1,
-                do_sample=True,
-                pad_token_id=tokenizer.pad_token_id,
-            )
-
-        generated_raw = tokenizer.decode(
-            outputs[0][inputs["input_ids"].shape[1] :],
-            skip_special_tokens=True,
+        generated_raw = extractor.extract(
+            task=task,
+            tool_output=tool_output,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
         )
 
         # Parse both into line lists
@@ -270,8 +275,7 @@ def evaluate_model(
         all_metrics["rouge_l"].append(rouge)
 
         # Compression
-        original_output = prompt.split("<|im_start|>user\n")[-1].split("<|im_end|>")[0]
-        compression = compute_compression_ratio(original_output, pred_text)
+        compression = compute_compression_ratio(tool_output, pred_text)
         all_metrics["compression"].append(compression)
 
         if (i + 1) % 10 == 0:
@@ -314,12 +318,27 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
         "--extractor-model",
         "--model-path",
         dest="extractor_model",
-        required=True,
+        default=None,
         help="Path to the trained extractor model",
+    )
+    parser.add_argument(
+        "--server-url",
+        "--base-url",
+        dest="server_url",
+        default=None,
+        help="URL for an OpenAI-compatible model server",
+    )
+    parser.add_argument(
+        "--server-model",
+        "--model-name",
+        dest="server_model",
+        default=None,
+        help="Model ID on the remote server (auto-detected if omitted)",
     )
     parser.add_argument("--eval-file", required=True, help="Path to test.jsonl")
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=1024)
+    parser.add_argument("--temperature", type=float, default=0.1)
     return parser
 
 
@@ -337,6 +356,9 @@ def main(argv: list[str] | None = None) -> int:
         args.eval_file,
         args.max_samples,
         args.max_new_tokens,
+        args.server_url,
+        args.server_model,
+        args.temperature,
     )
 
     # Save results
