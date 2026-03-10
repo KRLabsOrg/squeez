@@ -12,8 +12,7 @@ from typing import Protocol
 
 
 class _TokenizerLike(Protocol):
-    def __call__(self, text: str, **kwargs) -> dict:
-        ...
+    def __call__(self, text: str, **kwargs) -> dict: ...
 
 
 def encode_text(
