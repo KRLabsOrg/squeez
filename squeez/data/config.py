@@ -5,17 +5,20 @@ from pathlib import Path
 
 # Tool type weights for generation
 TOOL_WEIGHTS = {
-    "read_file": 0.25,
-    "grep": 0.15,
-    "python": 0.10,
-    "git_log": 0.10,
-    "test_output": 0.10,
+    "read_file": 0.28,
+    "grep": 0.18,
+    "python": 0.08,
+    "git_log": 0.08,
+    "test_output": 0.08,
     "git_diff": 0.05,
-    "git_blame": 0.05,
-    "ls": 0.05,
-    "lint_output": 0.05,
-    "build_output": 0.05,
-    "curl": 0.05,
+    "git_blame": 0.04,
+    "ls": 0.04,
+    "lint_output": 0.02,
+    "build_output": 0.02,
+    "curl": 0.03,
+    "pip_install": 0.04,
+    "type_check": 0.04,
+    "coverage": 0.02,
 }
 
 # Quality filter thresholds
@@ -28,7 +31,7 @@ MAX_TOOL_OUTPUT_LINES = 500
 # System prompt for the extraction model
 SYSTEM_PROMPT = (
     "You extract relevant lines from tool output for a coding task. "
-    'Return a JSON object: {"relevant_lines": ["line1", "line2", ...]}. '
+    "Return the relevant lines inside <relevant_lines> tags, one per line. "
     "Include ONLY lines the agent needs to see."
 )
 

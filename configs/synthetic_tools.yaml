@@ -1,0 +1,1673 @@
+# Synthetic multi-ecosystem tool type configurations for data generation.
+# Each tool type defines description, sample count, scenarios, and seed examples.
+
+tool_types:
+  npm_install:
+    description: "npm install / yarn add / pnpm install package manager output including dependency conflicts, vulnerability reports, deprecated package warnings, and resolution errors"
+    samples: 200
+    scenarios:
+      - "Clean install with many transitive dependencies and deprecation warnings"
+      - "Dependency version conflict between direct and peer dependencies"
+      - "Install failing due to incompatible Node.js engine version"
+      - "Audit report showing critical vulnerabilities in nested dependencies"
+      - "Lockfile conflict after merging branches with different dependency trees"
+    seed_examples:
+      - task: "Fix the authentication middleware dependency issue after upgrading to Express 5"
+        tool_output: |
+          npm install
+          npm WARN deprecated inflight@1.0.6: This module is not supported, and leaks memory.
+          npm WARN deprecated @humanwhocodes/config-array@0.11.14: Use @eslint/config-array instead
+          npm WARN deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+          npm ERR! code ERESOLVE
+          npm ERR! ERESOLVE unable to resolve dependency tree
+          npm ERR!
+          npm ERR! While resolving: auth-service@2.1.0
+          npm ERR! Found: express@5.0.0
+          npm ERR! node_modules/express
+          npm ERR!   express@"^5.0.0" from the root project
+          npm ERR!
+          npm ERR! Could not resolve dependency:
+          npm ERR! peer express@"^4.17.0" from passport@0.6.0
+          npm ERR! node_modules/passport
+          npm ERR!   passport@"^0.6.0" from the root project
+          npm ERR!
+          npm ERR! Fix the upstream dependency conflict, or retry
+          npm ERR! this command with --force or --legacy-peer-deps
+        relevant_lines:
+          - "npm ERR! ERESOLVE unable to resolve dependency tree"
+          - "npm ERR! peer express@\"^4.17.0\" from passport@0.6.0"
+          - "npm ERR! Fix the upstream dependency conflict, or retry"
+      - task: "Investigate why the CI pipeline reports high severity vulnerabilities"
+        tool_output: |
+          npm install
+          added 1247 packages, and audited 1248 packages in 32s
+
+          87 packages are looking for funding
+            run `npm fund` for details
+
+          6 vulnerabilities (1 low, 2 moderate, 2 high, 1 critical)
+
+          ┌───────────────┬──────────────────────────────────────────────────────────┐
+          │ Critical       │ Prototype Pollution in lodash.merge                    │
+          ├───────────────┼──────────────────────────────────────────────────────────┤
+          │ Package        │ lodash.merge                                           │
+          │ Dependency of  │ react-scripts                                          │
+          │ Path           │ react-scripts > webpack > lodash.merge                 │
+          │ More info      │ https://github.com/advisories/GHSA-p6mc-m468-83gw     │
+          └───────────────┴──────────────────────────────────────────────────────────┘
+
+          To address all issues (including breaking changes), run:
+            npm audit fix --force
+        relevant_lines:
+          - "6 vulnerabilities (1 low, 2 moderate, 2 high, 1 critical)"
+          - "│ Critical       │ Prototype Pollution in lodash.merge                    │"
+          - "│ Path           │ react-scripts > webpack > lodash.merge                 │"
+      - task: "Set up the project on a new machine after cloning the monorepo"
+        tool_output: |
+          npm install
+          npm WARN deprecated querystring@0.2.0: The querystring API is considered Legacy.
+          npm WARN deprecated svgo@1.3.2: This SVGO version is no longer supported. Upgrade to v2.x.x.
+          npm ERR! code EBADENGINE
+          npm ERR! engine Unsupported engine
+          npm ERR! engine Not compatible with your version of node/npm
+          npm ERR! notsup Required: {"node":">=18.0.0"}
+          npm ERR! notsup Actual:  {"node":"v16.20.2","npm":"8.19.4"}
+          npm ERR!
+          npm ERR! A complete log of this run can be found in:
+          npm ERR!   /home/user/.npm/_logs/2024-03-15T10_22_33_891Z-debug-0.log
+        relevant_lines:
+          - "npm ERR! engine Unsupported engine"
+          - "npm ERR! notsup Required: {\"node\":\">=18.0.0\"}"
+          - "npm ERR! notsup Actual:  {\"node\":\"v16.20.2\",\"npm\":\"8.19.4\"}"
+
+  npm_build:
+    description: "webpack / vite / esbuild / next build output including TypeScript compilation errors, chunk size warnings, build failures, and module resolution issues"
+    samples: 200
+    scenarios:
+      - "Production build with chunk size warnings and tree-shaking issues"
+      - "Build failing due to TypeScript strict mode violations"
+      - "Vite build with CSS module resolution errors"
+      - "Next.js build with static generation failures on dynamic routes"
+      - "Webpack build with circular dependency warnings and memory issues"
+    seed_examples:
+      - task: "Fix the production build that started failing after adding the dashboard component"
+        tool_output: |
+          > next build
+
+             Creating an optimized production build ...
+           - info Linting and checking validity of types
+
+          Failed to compile.
+
+          ./src/components/Dashboard/Analytics.tsx:14:5
+          Type error: Property 'metrics' does not exist on type 'DashboardProps'.
+
+            12 |   const Dashboard: React.FC<DashboardProps> = ({ data }) => {
+            13 |     const { users, revenue } = data;
+          > 14 |     const summary = data.metrics.reduce((acc, m) => acc + m.value, 0);
+               |     ^
+            15 |     return <div>{summary}</div>;
+            16 |   };
+
+          error Command failed with exit code 1.
+        relevant_lines:
+          - "Type error: Property 'metrics' does not exist on type 'DashboardProps'."
+          - "> 14 |     const summary = data.metrics.reduce((acc, m) => acc + m.value, 0);"
+          - "error Command failed with exit code 1."
+      - task: "Optimize the bundle size for the customer-facing web app"
+        tool_output: |
+          vite v5.2.6 building for production...
+          transforming (487) src/utils/helpers.ts
+
+          (!) Some chunks are larger than 500 kB after minification. Consider:
+          - Using dynamic import() to code-split the application
+          - Use build.rollupOptions.output.manualChunks to improve chunking
+          - Adjust chunk size limit for this warning via build.chunkSizeLimit
+
+          dist/assets/vendor-DkF3zQe1.js     872.43 kB │ gzip: 247.18 kB
+          dist/assets/chart-BbNq2mRx.js      534.21 kB │ gzip: 156.33 kB
+          dist/assets/index-CwE9mK4p.js       89.12 kB │ gzip:  28.45 kB
+          dist/assets/index-Dz1qM9cN.css      45.67 kB │ gzip:   8.92 kB
+
+          built in 14.23s
+        relevant_lines:
+          - "(!) Some chunks are larger than 500 kB after minification. Consider:"
+          - "dist/assets/vendor-DkF3zQe1.js     872.43 kB │ gzip: 247.18 kB"
+          - "dist/assets/chart-BbNq2mRx.js      534.21 kB │ gzip: 156.33 kB"
+      - task: "Debug why the webpack build runs out of memory in CI"
+        tool_output: |
+          > webpack --config webpack.prod.js
+
+          [webpack-cli] Compilation starting...
+          [webpack-cli] Compilation finished
+
+          WARNING in circular dependency detected:
+            src/modules/auth/index.ts -> src/modules/user/index.ts -> src/modules/auth/index.ts
+
+          WARNING in circular dependency detected:
+            src/services/api.ts -> src/services/interceptors.ts -> src/services/api.ts
+
+          asset main.bundle.js 4.2 MiB [emitted] (name: main)
+          asset vendors.bundle.js 2.8 MiB [emitted] (name: vendors)
+
+          ERROR in ./src/legacy/adapters.js
+          Module not found: Error: Can't resolve 'crypto' in '/app/src/legacy'
+          BREAKING CHANGE: webpack < 5 used to include polyfills for node.js core modules by default.
+          This is no longer the case. Verify if you need this module and configure a polyfill for it.
+        relevant_lines:
+          - "WARNING in circular dependency detected:"
+          - "Module not found: Error: Can't resolve 'crypto' in '/app/src/legacy'"
+          - "BREAKING CHANGE: webpack < 5 used to include polyfills for node.js core modules by default."
+
+  docker_build:
+    description: "Docker build output including layer caching, Dockerfile syntax errors, multi-stage build failures, and base image issues"
+    samples: 150
+    scenarios:
+      - "Multi-stage build failing during dependency installation layer"
+      - "Build context too large causing slow builds"
+      - "Base image architecture mismatch on ARM vs x86"
+      - "COPY instruction failing due to missing files in build context"
+      - "Build cache invalidation causing full rebuilds on every commit"
+    seed_examples:
+      - task: "Fix the Docker build that fails when installing Python dependencies"
+        tool_output: |
+          [+] Building 47.3s (12/18)
+           => [internal] load build definition from Dockerfile                    0.0s
+           => [internal] load .dockerignore                                       0.0s
+           => [internal] load metadata for docker.io/library/python:3.11-slim     1.2s
+           => [stage-1  1/8] FROM docker.io/library/python:3.11-slim@sha256:abc  0.0s
+           => CACHED [stage-1  2/8] WORKDIR /app                                 0.0s
+           => CACHED [stage-1  3/8] RUN apt-get update && apt-get install -y gcc  0.0s
+           => [stage-1  4/8] COPY requirements.txt .                             0.1s
+           => ERROR [stage-1  5/8] RUN pip install --no-cache-dir -r requirements.txt
+          ------
+           > [stage-1  5/8] RUN pip install --no-cache-dir -r requirements.txt:
+          0.843 Collecting psycopg2==2.9.9 (from -r requirements.txt (line 14))
+          1.201   Downloading psycopg2-2.9.9.tar.gz (384 kB)
+          3.445   error: subprocess-error-exit, status: 1
+          3.445     Error: pg_config executable not found.
+          3.445     pg_config is required to build psycopg2 from source.
+          3.445     Install PostgreSQL development package or use psycopg2-binary instead.
+          ------
+          Dockerfile:12
+          --------------------
+            11 |     COPY requirements.txt .
+            12 | >>> RUN pip install --no-cache-dir -r requirements.txt
+            13 |     COPY . .
+          --------------------
+          ERROR: failed to solve: process "/bin/sh -c pip install --no-cache-dir -r requirements.txt" did not complete successfully: exit code: 1
+        relevant_lines:
+          - "=> ERROR [stage-1  5/8] RUN pip install --no-cache-dir -r requirements.txt"
+          - "Error: pg_config executable not found."
+          - "Install PostgreSQL development package or use psycopg2-binary instead."
+      - task: "Debug why the production image is 2GB and optimize it"
+        tool_output: |
+          [+] Building 124.8s (16/16) FINISHED
+           => [internal] load build definition from Dockerfile                    0.0s
+           => [internal] load .dockerignore                                       0.0s
+           => [build  1/6] FROM docker.io/library/node:20                        12.3s
+           => [build  2/6] WORKDIR /app                                          0.1s
+           => [build  3/6] COPY package*.json ./                                 0.1s
+           => [build  4/6] RUN npm ci                                           45.2s
+           => [build  5/6] COPY . .                                              3.4s
+           => [build  6/6] RUN npm run build                                    28.7s
+           => [stage-2 1/3] FROM docker.io/library/node:20                        0.0s
+           => [stage-2 2/3] COPY --from=build /app .                              8.2s
+           => [stage-2 3/3] RUN npm prune --production                           22.1s
+           => exporting to image                                                  4.7s
+
+          WARNING: the final image uses node:20 (1.1GB base). Consider node:20-slim (200MB) or node:20-alpine (140MB).
+
+          Final image size: 2.14 GB
+        relevant_lines:
+          - "=> [stage-2 2/3] COPY --from=build /app .                              8.2s"
+          - "WARNING: the final image uses node:20 (1.1GB base). Consider node:20-slim (200MB) or node:20-alpine (140MB)."
+          - "Final image size: 2.14 GB"
+      - task: "Investigate why the Docker build is not using cache layers"
+        tool_output: |
+          [+] Building 89.4s (11/14)
+           => [internal] load build definition from Dockerfile                    0.0s
+           => [internal] load .dockerignore                                       0.0s
+           => CACHED [1/9] FROM docker.io/library/golang:1.22-alpine             0.0s
+           => [2/9] WORKDIR /app                                                 0.1s
+           => [3/9] COPY . .                                                     2.8s
+           => [4/9] RUN go mod download                                         34.2s
+           => [5/9] RUN go build -o server ./cmd/server                         52.1s
+
+          WARNING: COPY . . at line 4 invalidates cache for all subsequent layers.
+          Move dependency files (go.mod, go.sum) before COPY . . to leverage layer caching.
+
+          Recommended Dockerfile order:
+            COPY go.mod go.sum ./
+            RUN go mod download
+            COPY . .
+            RUN go build -o server ./cmd/server
+        relevant_lines:
+          - "WARNING: COPY . . at line 4 invalidates cache for all subsequent layers."
+          - "Move dependency files (go.mod, go.sum) before COPY . . to leverage layer caching."
+          - "=> [4/9] RUN go mod download                                         34.2s"
+
+  docker_logs:
+    description: "Docker container stdout/stderr logs including runtime errors, crash loops, health check failures, and resource exhaustion"
+    samples: 150
+    scenarios:
+      - "Application crash loop due to missing environment variable"
+      - "Container OOM killed during peak traffic"
+      - "Health check endpoint returning 503 causing restarts"
+      - "Database connection pool exhaustion under load"
+      - "SSL/TLS certificate errors when connecting to external services"
+    seed_examples:
+      - task: "Debug why the payment service container keeps restarting in production"
+        tool_output: |
+          $ docker logs payment-service --tail 30
+          2024-03-15T08:22:01.234Z [INFO]  Starting payment-service v3.2.1
+          2024-03-15T08:22:01.567Z [INFO]  Connecting to database at postgres://db-primary:5432/payments
+          2024-03-15T08:22:01.890Z [INFO]  Database connection established
+          2024-03-15T08:22:02.123Z [INFO]  Loading Stripe API configuration...
+          2024-03-15T08:22:02.456Z [ERROR] Failed to initialize Stripe client: missing required environment variable STRIPE_SECRET_KEY
+          2024-03-15T08:22:02.457Z [ERROR] Startup configuration validation failed
+          2024-03-15T08:22:02.458Z [FATAL] Shutting down due to configuration error
+          2024-03-15T08:22:05.001Z [INFO]  Starting payment-service v3.2.1
+          2024-03-15T08:22:05.334Z [INFO]  Connecting to database at postgres://db-primary:5432/payments
+          2024-03-15T08:22:05.667Z [INFO]  Database connection established
+          2024-03-15T08:22:05.998Z [INFO]  Loading Stripe API configuration...
+          2024-03-15T08:22:06.012Z [ERROR] Failed to initialize Stripe client: missing required environment variable STRIPE_SECRET_KEY
+          2024-03-15T08:22:06.013Z [FATAL] Shutting down due to configuration error
+        relevant_lines:
+          - "[ERROR] Failed to initialize Stripe client: missing required environment variable STRIPE_SECRET_KEY"
+          - "[FATAL] Shutting down due to configuration error"
+          - "[ERROR] Startup configuration validation failed"
+      - task: "Investigate the intermittent 502 errors reported by users on the API gateway"
+        tool_output: |
+          $ docker logs api-gateway --since 1h
+          2024-03-15T14:00:12.789Z [WARN]  Connection pool exhausted for upstream user-service (max: 50, active: 50, queued: 23)
+          2024-03-15T14:00:12.790Z [ERROR] Upstream connection timeout after 30000ms: POST /api/v2/users/bulk-import
+          2024-03-15T14:00:13.001Z [WARN]  Circuit breaker OPEN for user-service (failures: 12/10 threshold in 60s window)
+          2024-03-15T14:00:13.234Z [ERROR] 502 Bad Gateway - user-service unreachable: connect ECONNREFUSED 10.0.3.45:8080
+          2024-03-15T14:00:15.567Z [WARN]  Health check failed for user-service: HTTP 503 (attempt 3/3)
+          2024-03-15T14:00:15.568Z [INFO]  Removing user-service instance 10.0.3.45 from load balancer pool
+          2024-03-15T14:00:30.123Z [INFO]  Circuit breaker HALF-OPEN for user-service, allowing probe request
+          2024-03-15T14:00:30.456Z [INFO]  Probe request succeeded, circuit breaker CLOSED for user-service
+          2024-03-15T14:00:30.789Z [INFO]  Re-adding user-service instance 10.0.3.45 to load balancer pool
+        relevant_lines:
+          - "[WARN]  Connection pool exhausted for upstream user-service (max: 50, active: 50, queued: 23)"
+          - "[ERROR] 502 Bad Gateway - user-service unreachable: connect ECONNREFUSED 10.0.3.45:8080"
+          - "[WARN]  Circuit breaker OPEN for user-service (failures: 12/10 threshold in 60s window)"
+      - task: "Find out why the ML inference container was killed overnight"
+        tool_output: |
+          $ docker inspect ml-inference --format='{{.State.OOMKilled}}'
+          true
+
+          $ docker logs ml-inference --tail 20
+          2024-03-15T02:14:33.001Z [INFO]  Processing batch 847/1200 (batch_size=64)
+          2024-03-15T02:14:33.890Z [INFO]  Memory usage: 7.2GB / 8.0GB (90.0%)
+          2024-03-15T02:14:45.123Z [INFO]  Processing batch 848/1200 (batch_size=64)
+          2024-03-15T02:14:46.234Z [WARN]  Memory usage: 7.8GB / 8.0GB (97.5%) - approaching limit
+          2024-03-15T02:14:46.235Z [WARN]  GC pressure high, allocation stalls detected
+          2024-03-15T02:14:47.001Z [INFO]  Processing batch 849/1200 (batch_size=64)
+          2024-03-15T02:14:47.567Z [WARN]  Memory usage: 7.95GB / 8.0GB (99.4%)
+          2024-03-15T02:14:48.002Z Killed
+
+          $ docker inspect ml-inference --format='{{.State.ExitCode}}'
+          137
+        relevant_lines:
+          - "[WARN]  Memory usage: 7.8GB / 8.0GB (97.5%) - approaching limit"
+          - "2024-03-15T02:14:48.002Z Killed"
+          - "137"
+
+  tsc:
+    description: "TypeScript compiler (tsc) output including type errors, import resolution failures, strict mode violations, and declaration file issues"
+    samples: 200
+    scenarios:
+      - "Strict null checks revealing potential runtime errors after enabling strict mode"
+      - "Generic type inference failures in complex utility types"
+      - "Module resolution errors after migrating to ES modules"
+      - "Declaration file generation errors for a library package"
+      - "Incremental compilation errors after refactoring shared interfaces"
+    seed_examples:
+      - task: "Fix the TypeScript errors after enabling strict null checks in tsconfig.json"
+        tool_output: |
+          $ npx tsc --noEmit
+          src/services/UserService.ts(23,5): error TS2322: Type 'User | undefined' is not assignable to type 'User'.
+            Type 'undefined' is not assignable to type 'User'.
+
+          src/services/UserService.ts(45,12): error TS18048: 'user.address' is possibly 'undefined'.
+
+          src/components/ProfileCard.tsx(17,9): error TS2532: Object is possibly 'undefined'.
+            const displayName = props.user.profile.displayName.toUpperCase();
+
+          src/hooks/useAuth.ts(31,3): error TS2322: Type 'null' is not assignable to type 'AuthState'.
+
+          src/utils/formatters.ts(8,42): error TS18047: 'value' is possibly 'null'.
+            return value.toFixed(2);
+
+          Found 5 errors in 4 files.
+
+          Errors  Files
+               2  src/services/UserService.ts
+               1  src/components/ProfileCard.tsx
+               1  src/hooks/useAuth.ts
+               1  src/utils/formatters.ts
+        relevant_lines:
+          - "error TS2322: Type 'User | undefined' is not assignable to type 'User'."
+          - "error TS18048: 'user.address' is possibly 'undefined'."
+          - "error TS2532: Object is possibly 'undefined'."
+      - task: "Resolve module import errors after converting the project to ESM"
+        tool_output: |
+          $ npx tsc --noEmit
+          src/index.ts(1,21): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './config.js'?
+
+          src/index.ts(2,28): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './routes/api.js'?
+
+          src/middleware/auth.ts(3,32): error TS2307: Cannot find module 'jsonwebtoken' or its corresponding type declarations.
+
+          src/middleware/auth.ts(4,22): error TS7016: Could not find a declaration file for module 'express-rate-limit'. '/app/node_modules/express-rate-limit/dist/index.js' implicitly has an 'any' type.
+            Try `npm i --save-dev @types/express-rate-limit` if it exists or add a new declaration (.d.ts) file.
+
+          Found 4 errors in 2 files.
+        relevant_lines:
+          - "error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'."
+          - "error TS2307: Cannot find module 'jsonwebtoken' or its corresponding type declarations."
+          - "error TS7016: Could not find a declaration file for module 'express-rate-limit'."
+      - task: "Fix type errors in the API response handlers after updating the shared types package"
+        tool_output: |
+          $ npx tsc --noEmit
+          src/handlers/orders.ts(34,7): error TS2345: Argument of type 'OrderResponse' is not assignable to parameter of type 'ApiResponse<Order>'.
+            Types of property 'data' are incompatible.
+              Type 'Order | null' is not assignable to type 'Order'.
+                Type 'null' is not assignable to type 'Order'.
+
+          src/handlers/orders.ts(56,15): error TS2339: Property 'totalAmount' does not exist on type 'OrderSummary'.
+            Did you mean 'total_amount'?
+
+          src/handlers/products.ts(22,9): error TS2741: Property 'currency' is missing in type '{ price: number; name: string; }' but required in type 'ProductPrice'.
+
+          src/handlers/products.ts(41,5): error TS2578: Unused '@ts-expect-error' directive.
+
+          Found 4 errors in 2 files.
+        relevant_lines:
+          - "error TS2345: Argument of type 'OrderResponse' is not assignable to parameter of type 'ApiResponse<Order>'."
+          - "error TS2339: Property 'totalAmount' does not exist on type 'OrderSummary'."
+          - "error TS2741: Property 'currency' is missing in type '{ price: number; name: string; }' but required in type 'ProductPrice'."
+
+  cargo_build:
+    description: "Rust cargo build/test/clippy output including borrow checker errors, lifetime issues, missing trait implementations, and unsafe code warnings"
+    samples: 150
+    scenarios:
+      - "Borrow checker error from holding mutable and immutable references simultaneously"
+      - "Lifetime annotation issues in async trait implementations"
+      - "Missing Send + Sync bounds for multi-threaded code"
+      - "Clippy warnings about idiomatic Rust patterns"
+      - "Test failures due to race conditions in concurrent data structures"
+    seed_examples:
+      - task: "Fix the borrow checker errors in the connection pool manager"
+        tool_output: |
+          $ cargo build
+             Compiling connection-pool v0.3.2 (/home/dev/connection-pool)
+          error[E0502]: cannot borrow `pool` as mutable because it is also borrowed as immutable
+            --> src/pool.rs:47:9
+             |
+          43 |         let conn = pool.get_connection();
+             |                    ---- immutable borrow occurs here
+          ...
+          47 |         pool.release_connection(conn);
+             |         ^^^^ mutable borrow occurs here
+          48 |         println!("Active connections: {}", pool.active_count());
+             |                                           ---- immutable borrow later used here
+
+          error[E0505]: cannot move out of `conn` because it is borrowed
+            --> src/pool.rs:52:14
+             |
+          50 |         let ref_conn = &conn;
+             |                        ----- borrow of `conn` occurs here
+          51 |         log::debug!("Connection state: {:?}", ref_conn.state());
+          52 |         drop(conn);
+             |              ^^^^ move out of `conn` occurs here
+          53 |         ref_conn.is_alive();
+             |         -------- borrow later used here
+
+          For more information about this error, try `rustc --explain E0502`.
+          error: could not compile `connection-pool` (lib) due to 2 previous errors
+        relevant_lines:
+          - "error[E0502]: cannot borrow `pool` as mutable because it is also borrowed as immutable"
+          - "error[E0505]: cannot move out of `conn` because it is borrowed"
+          - "error: could not compile `connection-pool` (lib) due to 2 previous errors"
+      - task: "Resolve lifetime issues in the async request handler"
+        tool_output: |
+          $ cargo build
+             Compiling web-server v1.0.0 (/home/dev/web-server)
+          error[E0597]: `request` does not live long enough
+            --> src/handlers/auth.rs:28:25
+             |
+          26 |     async fn handle_login(&self, request: Request) -> Response {
+             |                                  ------- binding `request` declared here
+          27 |         let body = request.body();
+          28 |         let token = self.auth_service.validate(body).await;
+             |                         ^^^^^^^^^^^^ borrowed value does not live long enough
+          ...
+          35 |     }
+             |     - `request` dropped here while still borrowed
+             |
+          note: argument requires that `request` is borrowed for `'static`
+            --> src/services/auth.rs:12:36
+             |
+          12 |     async fn validate(&self, data: &str) -> Result<Token, AuthError>;
+             |                                    ^^^^
+
+          error: lifetime may not live long enough
+            --> src/handlers/auth.rs:40:9
+             |
+          38 |     async fn middleware<'a>(&'a self, req: &'a Request) -> &'a Response {
+             |                        -- lifetime `'a` defined here
+          39 |         let cached = self.cache.get(req.path());
+          40 |         cached.unwrap_or(&Response::not_found())
+             |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'a` must outlive `'static`
+
+          error: could not compile `web-server` (lib) due to 2 previous errors
+        relevant_lines:
+          - "error[E0597]: `request` does not live long enough"
+          - "note: argument requires that `request` is borrowed for `'static`"
+          - "error: lifetime may not live long enough"
+      - task: "Make the event processor work across multiple threads"
+        tool_output: |
+          $ cargo build
+             Compiling event-processor v0.5.0 (/home/dev/event-processor)
+          error[E0277]: `Rc<RefCell<Vec<Event>>>` cannot be sent between threads safely
+            --> src/processor.rs:34:18
+             |
+          34 |     tokio::spawn(async move {
+             |                  ^^^^^^^^^^ `Rc<RefCell<Vec<Event>>>` cannot be sent between threads safely
+             |
+             = help: within `EventProcessor`, the trait `Send` is not implemented for `Rc<RefCell<Vec<Event>>>`
+             = note: required for `EventProcessor` to implement `Send`
+          note: required because it's used within this `async` block
+            --> src/processor.rs:34:18
+             |
+          34 |     tokio::spawn(async move {
+             |                  ^^^^^^^^^^
+          note: required by a bound in `tokio::spawn`
+             = help: consider using `Arc<Mutex<Vec<Event>>>` instead
+
+          error[E0277]: `dyn EventHandler` cannot be shared between threads safely
+            --> src/processor.rs:45:5
+             |
+          45 |     handlers: Vec<Box<dyn EventHandler>>,
+             |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `dyn EventHandler` cannot be shared between threads safely
+             |
+             = help: consider adding `+ Send + Sync` to the trait bound
+
+          error: could not compile `event-processor` (lib) due to 2 previous errors
+        relevant_lines:
+          - "error[E0277]: `Rc<RefCell<Vec<Event>>>` cannot be sent between threads safely"
+          - "= help: consider using `Arc<Mutex<Vec<Event>>>` instead"
+          - "error[E0277]: `dyn EventHandler` cannot be shared between threads safely"
+
+  terraform:
+    description: "Terraform plan/apply output including resource diffs, state conflicts, provider errors, and infrastructure change summaries"
+    samples: 100
+    scenarios:
+      - "Plan showing unexpected resource destruction due to configuration drift"
+      - "Apply failing due to cloud provider API rate limiting"
+      - "State lock contention between concurrent CI pipeline runs"
+      - "Module version upgrade causing breaking changes in resource attributes"
+      - "Import existing infrastructure into Terraform state"
+    seed_examples:
+      - task: "Review the terraform plan before applying the database migration changes"
+        tool_output: |
+          $ terraform plan
+
+          Terraform will perform the following actions:
+
+            # aws_db_instance.primary will be updated in-place
+            ~ resource "aws_db_instance" "primary" {
+                  id                 = "prod-db-primary"
+                ~ instance_class     = "db.r5.xlarge" -> "db.r6g.2xlarge"
+                ~ multi_az           = true -> false  # forces replacement
+                  # (28 unchanged attributes hidden)
+              }
+
+            # aws_db_instance.primary must be replaced
+          -/+ resource "aws_db_instance" "primary" {
+                ~ id                 = "prod-db-primary" -> (known after apply)
+                ~ endpoint           = "prod-db-primary.abc123.us-east-1.rds.amazonaws.com" -> (known after apply)
+                  # Warning: this will cause downtime
+              }
+
+            # aws_security_group_rule.db_access will be created
+            + resource "aws_security_group_rule" "db_access" {
+                + cidr_blocks = ["10.0.0.0/16"]
+                + from_port   = 5432
+                + protocol    = "tcp"
+                + to_port     = 5432
+                + type        = "ingress"
+              }
+
+          Plan: 1 to add, 0 to change, 1 to destroy.
+        relevant_lines:
+          - "~ multi_az           = true -> false  # forces replacement"
+          - "# aws_db_instance.primary must be replaced"
+          - "Plan: 1 to add, 0 to change, 1 to destroy."
+      - task: "Fix the terraform apply error that blocks the infrastructure deployment"
+        tool_output: |
+          $ terraform apply -auto-approve
+
+          aws_iam_role.lambda_exec: Creating...
+          aws_s3_bucket.data_lake: Creating...
+          aws_iam_role.lambda_exec: Creation complete after 2s [id=lambda-exec-role]
+          aws_s3_bucket.data_lake: Creation complete after 3s [id=prod-data-lake-2024]
+          aws_lambda_function.processor: Creating...
+
+          Error: creating Lambda Function (data-processor): operation error Lambda: CreateFunction,
+          https response error StatusCode: 403, RequestID: abc123-def456,
+          api error AccessDeniedException: User: arn:aws:iam::123456789012:user/deploy
+          is not authorized to perform: lambda:CreateFunction on resource:
+          arn:aws:lambda:us-east-1:123456789012:function:data-processor
+          because no identity-based policy allows the lambda:CreateFunction action
+
+            with aws_lambda_function.processor,
+            on main.tf line 45, in resource "aws_lambda_function" "processor":
+            45: resource "aws_lambda_function" "processor" {
+
+          Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+
+          Note: errors occurred during the apply, some resources may have been created.
+        relevant_lines:
+          - "api error AccessDeniedException: User: arn:aws:iam::123456789012:user/deploy"
+          - "is not authorized to perform: lambda:CreateFunction on resource:"
+          - "Note: errors occurred during the apply, some resources may have been created."
+      - task: "Resolve the state lock issue preventing the team from deploying"
+        tool_output: |
+          $ terraform plan
+
+          Acquiring state lock. This may take a few moments...
+
+          Error: Error acquiring the state lock
+
+          Error message: ConditionalCheckFailedException: The conditional request failed
+          Lock Info:
+            ID:        a1b2c3d4-e5f6-7890-abcd-ef1234567890
+            Path:      s3://terraform-state-prod/infrastructure/terraform.tfstate
+            Operation: OperationTypeApply
+            Who:       ci-runner@build-agent-07
+            Version:   1.7.4
+            Created:   2024-03-15 09:45:12.345678 +0000 UTC
+            Info:
+
+          Terraform acquires a state lock to protect the state from being
+          written by multiple users at the same time. Please resolve the
+          issue above and try again. For most commands, you can disable
+          locking with the "-lock=false" flag, but this is not recommended.
+          Use `terraform force-unlock a1b2c3d4-e5f6-7890-abcd-ef1234567890` to manually unlock.
+        relevant_lines:
+          - "Error: Error acquiring the state lock"
+          - "Who:       ci-runner@build-agent-07"
+          - "Use `terraform force-unlock a1b2c3d4-e5f6-7890-abcd-ef1234567890` to manually unlock."
+
+  kubectl:
+    description: "kubectl describe/logs/get output including pod scheduling failures, CrashLoopBackOff events, OOM kills, resource quota issues, and node conditions"
+    samples: 100
+    scenarios:
+      - "Pod stuck in CrashLoopBackOff due to misconfigured readiness probe"
+      - "Pod pending due to insufficient CPU/memory resources on available nodes"
+      - "Node NotReady causing evictions across multiple pods"
+      - "Persistent volume claim stuck in Pending state"
+      - "Pod failing image pull from private container registry"
+    seed_examples:
+      - task: "Debug why the recommendation-engine pods are not starting in the staging cluster"
+        tool_output: |
+          $ kubectl describe pod recommendation-engine-7f8d9c6b4-x2kpl -n staging
+          Name:         recommendation-engine-7f8d9c6b4-x2kpl
+          Namespace:    staging
+          Status:       Pending
+          Conditions:
+            Type           Status
+            PodScheduled   False
+          Events:
+            Type     Reason            Age                From               Message
+            ----     ------            ----               ----               -------
+            Warning  FailedScheduling  12s (x3 over 45s)  default-scheduler  0/5 nodes are available:
+              2 node(s) had untolerated taint {node.kubernetes.io/disk-pressure: },
+              3 Insufficient memory.
+              preemption: 0/5 nodes are available:
+              2 No preemption victims found on this node,
+              3 Insufficient memory.
+
+          Containers:
+            recommendation-engine:
+              Image:    registry.internal/ml/recommendation-engine:v2.3.1
+              Requests:
+                cpu:     4
+                memory:  16Gi
+              Limits:
+                cpu:     8
+                memory:  32Gi
+        relevant_lines:
+          - "0/5 nodes are available:"
+          - "3 Insufficient memory."
+          - "memory:  16Gi"
+      - task: "Investigate the OOMKilled events on the data-pipeline pods"
+        tool_output: |
+          $ kubectl get pod data-pipeline-worker-0 -n production -o yaml | grep -A 20 lastState
+              lastState:
+                terminated:
+                  containerID: containerd://abc123def456
+                  exitCode: 137
+                  finishedAt: "2024-03-15T06:32:11Z"
+                  reason: OOMKilled
+                  startedAt: "2024-03-15T06:14:03Z"
+
+          $ kubectl top pod data-pipeline-worker-0 -n production
+          NAME                       CPU(cores)   MEMORY(bytes)
+          data-pipeline-worker-0     2450m        3891Mi
+
+          $ kubectl describe pod data-pipeline-worker-0 -n production | grep -A 5 "Limits"
+              Limits:
+                cpu:     4
+                memory:  4Gi
+              Requests:
+                cpu:     2
+                memory:  2Gi
+        relevant_lines:
+          - "reason: OOMKilled"
+          - "exitCode: 137"
+          - "data-pipeline-worker-0     2450m        3891Mi"
+      - task: "Fix the ImagePullBackOff error for the newly deployed microservice"
+        tool_output: |
+          $ kubectl describe pod notification-svc-5d4c3b2a1-9mnop -n production
+          Name:         notification-svc-5d4c3b2a1-9mnop
+          Namespace:    production
+          Status:       Pending
+
+          Events:
+            Type     Reason     Age                From               Message
+            ----     ------     ----               ----               -------
+            Normal   Scheduled  2m12s              default-scheduler  Successfully assigned production/notification-svc-5d4c3b2a1-9mnop to node-03
+            Normal   Pulling    45s (x3 over 2m)   kubelet            Pulling image "ghcr.io/myorg/notification-svc:v1.4.0"
+            Warning  Failed     44s (x3 over 1m)   kubelet            Failed to pull image "ghcr.io/myorg/notification-svc:v1.4.0": rpc error: code = Unknown desc = failed to pull and unpack image "ghcr.io/myorg/notification-svc:v1.4.0": failed to resolve reference "ghcr.io/myorg/notification-svc:v1.4.0": failed to authorize: failed to fetch anonymous token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Amyorg%2Fnotification-svc%3Apull&service=ghcr.io: 403 Forbidden
+            Warning  BackOff    12s (x4 over 1m)   kubelet            Back-off pulling image "ghcr.io/myorg/notification-svc:v1.4.0"
+        relevant_lines:
+          - "Warning  Failed     44s (x3 over 1m)   kubelet            Failed to pull image \"ghcr.io/myorg/notification-svc:v1.4.0\""
+          - "failed to authorize: failed to fetch anonymous token: unexpected status from GET request"
+          - "Warning  BackOff    12s (x4 over 1m)   kubelet            Back-off pulling image \"ghcr.io/myorg/notification-svc:v1.4.0\""
+
+  make_cmake:
+    description: "make/cmake/gcc/g++ build output including linker errors, missing header files, ABI incompatibilities, and undefined reference errors"
+    samples: 100
+    scenarios:
+      - "Linker error from missing library in the link command"
+      - "Header file not found due to incorrect include path"
+      - "Multiple definition error from including implementation in header"
+      - "CMake configuration failing to find required system dependency"
+      - "ABI incompatibility between C++ standard library versions"
+    seed_examples:
+      - task: "Fix the linker errors when building the signal processing library"
+        tool_output: |
+          $ make -j8
+          g++ -c -std=c++17 -O2 -Wall -I./include src/fft.cpp -o build/fft.o
+          g++ -c -std=c++17 -O2 -Wall -I./include src/filter.cpp -o build/filter.o
+          g++ -c -std=c++17 -O2 -Wall -I./include src/main.cpp -o build/main.o
+          g++ build/fft.o build/filter.o build/main.o -o build/signal_processor -lm
+          /usr/bin/ld: build/fft.o: undefined reference to `fftw_plan_dft_1d'
+          /usr/bin/ld: build/fft.o: undefined reference to `fftw_execute'
+          /usr/bin/ld: build/fft.o: undefined reference to `fftw_destroy_plan'
+          /usr/bin/ld: build/fft.o: undefined reference to `fftw_malloc'
+          /usr/bin/ld: build/fft.o: undefined reference to `fftw_free'
+          /usr/bin/ld: build/filter.o: undefined reference to `sndfile_open'
+          /usr/bin/ld: build/filter.o: undefined reference to `sndfile_read_float'
+          collect2: error: ld returned 1 exit status
+          make: *** [Makefile:28: signal_processor] Error 1
+        relevant_lines:
+          - "/usr/bin/ld: build/fft.o: undefined reference to `fftw_plan_dft_1d'"
+          - "/usr/bin/ld: build/filter.o: undefined reference to `sndfile_open'"
+          - "collect2: error: ld returned 1 exit status"
+      - task: "Resolve the CMake configuration errors for the cross-platform project"
+        tool_output: |
+          $ cmake -B build -DCMAKE_BUILD_TYPE=Release
+          -- The C compiler identification is GNU 13.2.0
+          -- The CXX compiler identification is GNU 13.2.0
+          -- Detecting C compiler ABI info - done
+          -- Detecting CXX compiler ABI info - done
+          -- Found Boost: /usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0 (found version "1.83.0")
+          -- Looking for OpenSSL...
+          CMake Error at /usr/share/cmake-3.28/Modules/FindPackageHandleStandardArgs.cmake:230 (message):
+            Could NOT find OpenSSL (missing: OPENSSL_CRYPTO_LIBRARY OPENSSL_INCLUDE_DIR)
+            (Required is at least version "1.1.1")
+          Call Stack (most recent call first):
+            /usr/share/cmake-3.28/Modules/FindPackageHandleStandardArgs.cmake:600 (_FPHSA_FAILURE_MESSAGE)
+            /usr/share/cmake-3.28/Modules/FindOpenSSL.cmake:670 (find_package_handle_standard_args)
+            CMakeLists.txt:34 (find_package)
+
+          -- Configuring incomplete, errors occurred!
+        relevant_lines:
+          - "Could NOT find OpenSSL (missing: OPENSSL_CRYPTO_LIBRARY OPENSSL_INCLUDE_DIR)"
+          - "(Required is at least version \"1.1.1\")"
+          - "-- Configuring incomplete, errors occurred!"
+      - task: "Debug the multiple definition errors after merging the utility library"
+        tool_output: |
+          $ make
+          g++ -c -std=c++20 -I./include src/app.cpp -o build/app.o
+          g++ -c -std=c++20 -I./include src/network.cpp -o build/network.o
+          g++ build/app.o build/network.o -o build/server -lpthread -lssl -lcrypto
+          /usr/bin/ld: build/network.o: in function `utils::parse_json(std::string const&)':
+          network.cpp:(.text+0x1a0): multiple definition of `utils::parse_json(std::string const&)'; build/app.o:app.cpp:(.text+0x340): first defined here
+          /usr/bin/ld: build/network.o: in function `utils::encode_base64(std::vector<unsigned char, std::allocator<unsigned char>> const&)':
+          network.cpp:(.text+0x2f0): multiple definition of `utils::encode_base64(std::vector<unsigned char, std::allocator<unsigned char>> const&)'; build/app.o:app.cpp:(.text+0x490): first defined here
+          collect2: error: ld returned 1 exit status
+          make: *** [Makefile:15: server] Error 1
+
+          Note: Functions defined in include/utils.h should be marked 'inline' or moved to a .cpp file.
+        relevant_lines:
+          - "multiple definition of `utils::parse_json(std::string const&)'"
+          - "multiple definition of `utils::encode_base64(std::vector<unsigned char, std::allocator<unsigned char>> const&)'"
+          - "Note: Functions defined in include/utils.h should be marked 'inline' or moved to a .cpp file."
+
+  go_build:
+    description: "Go build/test/vet output including import cycle detection, race condition reports, compilation errors, and module resolution issues"
+    samples: 100
+    scenarios:
+      - "Import cycle between packages in a growing monorepo"
+      - "Race condition detected during concurrent map access"
+      - "Module version conflicts in go.mod after dependency update"
+      - "Interface implementation errors after API changes"
+      - "Go vet warnings about unsafe pointer conversions and printf format issues"
+    seed_examples:
+      - task: "Break the import cycle that is preventing the project from building"
+        tool_output: |
+          $ go build ./...
+          package myapp/internal/auth
+              imports myapp/internal/user
+              imports myapp/internal/permissions
+              imports myapp/internal/auth
+          import cycle not allowed
+
+          package myapp/internal/handlers
+              imports myapp/internal/middleware
+              imports myapp/internal/handlers
+          import cycle not allowed
+
+          $ go build -v ./cmd/server 2>&1 | head -5
+          myapp/internal/config
+          myapp/internal/database
+          myapp/internal/auth: import cycle not allowed
+        relevant_lines:
+          - "import cycle not allowed"
+          - "imports myapp/internal/permissions"
+          - "imports myapp/internal/auth"
+      - task: "Fix the race condition detected in the caching layer tests"
+        tool_output: |
+          $ go test -race ./internal/cache/...
+          ==================
+          WARNING: DATA RACE
+          Read at 0x00c0001a4060 by goroutine 14:
+            myapp/internal/cache.(*LRUCache).Get()
+                /home/dev/myapp/internal/cache/lru.go:45 +0x7c
+            myapp/internal/cache.TestConcurrentAccess.func1()
+                /home/dev/myapp/internal/cache/lru_test.go:89 +0x64
+
+          Previous write at 0x00c0001a4060 by goroutine 12:
+            myapp/internal/cache.(*LRUCache).Set()
+                /home/dev/myapp/internal/cache/lru.go:62 +0x134
+            myapp/internal/cache.TestConcurrentAccess.func2()
+                /home/dev/myapp/internal/cache/lru_test.go:95 +0x88
+
+          Goroutine 14 (running) created at:
+            myapp/internal/cache.TestConcurrentAccess()
+                /home/dev/myapp/internal/cache/lru_test.go:87 +0x15c
+
+          Found 1 data race(s)
+          FAIL    myapp/internal/cache     0.234s
+        relevant_lines:
+          - "WARNING: DATA RACE"
+          - "myapp/internal/cache.(*LRUCache).Get()"
+          - "Found 1 data race(s)"
+      - task: "Resolve the interface compliance errors after updating the storage package"
+        tool_output: |
+          $ go build ./...
+          # myapp/internal/storage/postgres
+          internal/storage/postgres/repository.go:23:6: cannot use PostgresRepo{} (value of type PostgresRepo) as storage.Repository value in variable declaration:
+              PostgresRepo does not implement storage.Repository (missing method DeleteBatch)
+
+          # myapp/internal/storage/redis
+          internal/storage/redis/cache.go:15:6: cannot use RedisCache{} (value of type RedisCache) as storage.Cache value in variable declaration:
+              RedisCache does not implement storage.Cache (wrong type for method Get)
+                  have Get(context.Context, string) (string, error)
+                  want Get(context.Context, string) ([]byte, error)
+
+          # myapp/internal/api
+          internal/api/server.go:67:19: cannot use handler (variable of type *handlers.UserHandler) as http.Handler value in argument to router.Handle:
+              *handlers.UserHandler does not implement http.Handler (missing method ServeHTTP)
+        relevant_lines:
+          - "PostgresRepo does not implement storage.Repository (missing method DeleteBatch)"
+          - "RedisCache does not implement storage.Cache (wrong type for method Get)"
+          - "*handlers.UserHandler does not implement http.Handler (missing method ServeHTTP)"
+
+  eslint:
+    description: "ESLint/Prettier/Biome linting output including rule violations, configuration errors, auto-fix results, and formatting conflicts"
+    samples: 100
+    scenarios:
+      - "Many lint errors after adding stricter rules to the shared config"
+      - "Conflicting rules between ESLint and Prettier configurations"
+      - "Custom rule plugin failing to load due to version mismatch"
+      - "Auto-fix introducing unexpected changes in JSX formatting"
+      - "Migration errors when converting from .eslintrc to flat config format"
+    seed_examples:
+      - task: "Fix the ESLint errors blocking the CI pipeline after the config update"
+        tool_output: |
+          $ npx eslint src/ --max-warnings 0
+
+          /app/src/components/DataTable.tsx
+             12:7   error    'tempData' is assigned a value but never used                  @typescript-eslint/no-unused-vars
+             23:15  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+             45:9   warning  React Hook useEffect has a missing dependency: 'fetchData'     react-hooks/exhaustive-deps
+             67:21  error    Do not use Array index in keys                                 react/no-array-index-key
+
+          /app/src/utils/api.ts
+              8:1   error    Prefer named exports                                           import/no-default-export
+             14:29  error    Promises must be awaited, end with a call to .catch, or end     @typescript-eslint/no-floating-promises
+                             with a call to .then with a rejection handler
+             31:5   error    Unexpected console statement                                   no-console
+
+          /app/src/hooks/useQuery.ts
+             19:3   error    Unexpected empty object pattern                                no-empty-pattern
+             22:12  error    'data' is already declared in the upper scope                  @typescript-eslint/no-shadow
+
+          9 problems (8 errors, 1 warning)
+          1 warning and 3 errors potentially fixable with the `--fix` option.
+        relevant_lines:
+          - "Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any"
+          - "Promises must be awaited, end with a call to .catch, or end     @typescript-eslint/no-floating-promises"
+          - "9 problems (8 errors, 1 warning)"
+      - task: "Resolve the ESLint flat config migration errors"
+        tool_output: |
+          $ npx eslint .
+
+          Oops! Something went wrong! :(
+
+          ESLint found problems with your configuration:
+          - Configuration key "extends" is not allowed in flat config. Use the "..." spread operator to extend configurations.
+
+          Error: eslint.config.js: Environment key "browser" is unknown
+              at /app/node_modules/eslint/lib/config/flat-config-array.js:145:23
+
+          If you still need to use the old configuration format, please set the
+          ESLINT_USE_FLAT_CONFIG=false environment variable.
+          The old configuration format will be removed in ESLint v10.0.0.
+
+          Migration guide: https://eslint.org/docs/latest/use/configure/migration-guide
+        relevant_lines:
+          - "Configuration key \"extends\" is not allowed in flat config."
+          - "Error: eslint.config.js: Environment key \"browser\" is unknown"
+          - "The old configuration format will be removed in ESLint v10.0.0."
+      - task: "Clean up Prettier conflicts that are causing format-on-save to produce lint errors"
+        tool_output: |
+          $ npx eslint src/ --format stylish
+
+          /app/src/components/Modal.tsx
+             4:1  error  Replace `··` with `····`                                      prettier/prettier
+             5:1  error  Replace `··` with `····`                                      prettier/prettier
+            18:1  error  Delete `··`                                                    prettier/prettier
+            24:1  error  Insert `··`                                                    prettier/prettier
+
+          /app/src/components/Form.tsx
+            12:80  error  Replace `·>` with `\n····>`                                   prettier/prettier
+            15:1   error  Expected indentation of 6 spaces but found 4 spaces           indent
+            15:1   error  Delete `··`                                                   prettier/prettier
+
+          7 problems (7 errors, 0 warnings)
+          7 errors potentially fixable with the `--fix` option.
+
+          Note: You may have conflicting indent rules between ESLint and Prettier.
+          Consider removing the "indent" rule from ESLint when using Prettier.
+        relevant_lines:
+          - "Replace `··` with `····`                                      prettier/prettier"
+          - "Expected indentation of 6 spaces but found 4 spaces           indent"
+          - "Consider removing the \"indent\" rule from ESLint when using Prettier."
+
+  mvn_gradle:
+    description: "Maven (mvn) and Gradle build output including compilation errors, dependency resolution failures, test failures, and plugin configuration issues"
+    samples: 100
+    scenarios:
+      - "Maven compilation error due to incompatible Java version"
+      - "Gradle dependency resolution conflict between transitive dependencies"
+      - "Test failures with detailed assertion error messages"
+      - "Maven plugin execution failing during package phase"
+      - "Gradle build cache corruption causing stale compilation output"
+    seed_examples:
+      - task: "Fix the Maven build errors after upgrading to Java 21"
+        tool_output: |
+          $ mvn clean compile
+          [INFO] Scanning for projects...
+          [INFO]
+          [INFO] -----------------< com.myapp:payment-service >------------------
+          [INFO] Building payment-service 2.4.0
+          [INFO] --------------------------------[ jar ]---------------------------------
+          [INFO]
+          [INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ payment-service ---
+          [INFO] Compiling 47 source files to /home/dev/payment-service/target/classes
+          [ERROR] COMPILATION ERROR :
+          [ERROR] /home/dev/payment-service/src/main/java/com/myapp/payment/PaymentProcessor.java:[23,35] cannot access javax.annotation.PostConstruct
+            class file for javax.annotation.PostConstruct not found
+          [ERROR] /home/dev/payment-service/src/main/java/com/myapp/payment/config/SecurityConfig.java:[8,22] package javax.servlet does not exist
+          [ERROR] /home/dev/payment-service/src/main/java/com/myapp/payment/config/SecurityConfig.java:[15,42] cannot find symbol
+            symbol:   class HttpServletRequest
+            location: package javax.servlet.http
+          [INFO] 3 errors
+          [INFO] BUILD FAILURE
+          [INFO] Total time:  4.231 s
+        relevant_lines:
+          - "class file for javax.annotation.PostConstruct not found"
+          - "package javax.servlet does not exist"
+          - "[INFO] 3 errors"
+      - task: "Resolve the Gradle dependency conflict preventing the Spring Boot app from starting"
+        tool_output: |
+          $ ./gradlew bootRun
+
+          FAILURE: Build failed with an exception.
+
+          * What went wrong:
+          Execution failed for task ':compileJava'.
+          > Could not resolve all files for configuration ':compileClasspath'.
+             > Could not resolve org.springframework.boot:spring-boot-starter-web:3.2.3.
+               Required by:
+                   project :
+                > Module 'org.springframework.boot:spring-boot-starter-web' has been rejected:
+                     Dependency requires at least version 3.2.3 but version 3.1.0 has been forced.
+             > Could not resolve com.fasterxml.jackson.core:jackson-databind:2.16.1.
+               Required by:
+                   project : > org.springframework.boot:spring-boot-starter-web:3.2.3
+                > Conflict with com.fasterxml.jackson.core:jackson-databind:2.15.0 forced by project.
+
+          * Try:
+          > Run with --stacktrace option to get the stack trace.
+          > Run with --info or --debug option to get more log output.
+
+          BUILD FAILED in 8s
+        relevant_lines:
+          - "Module 'org.springframework.boot:spring-boot-starter-web' has been rejected:"
+          - "Dependency requires at least version 3.2.3 but version 3.1.0 has been forced."
+          - "Conflict with com.fasterxml.jackson.core:jackson-databind:2.15.0 forced by project."
+      - task: "Debug the Maven test failures in the order service module"
+        tool_output: |
+          $ mvn test -pl order-service
+          [INFO] Running com.myapp.order.service.OrderServiceTest
+          [ERROR] Tests run: 12, Failures: 2, Errors: 1, Skipped: 0
+
+          [ERROR] OrderServiceTest.testCreateOrder:45
+          org.opentest4j.AssertionFailedError:
+          Expected: OrderStatus.CONFIRMED
+          Actual:   OrderStatus.PENDING
+              at com.myapp.order.service.OrderServiceTest.testCreateOrder(OrderServiceTest.java:45)
+
+          [ERROR] OrderServiceTest.testCancelOrder:78
+          java.lang.NullPointerException: Cannot invoke "com.myapp.order.model.Order.getStatus()" because "order" is null
+              at com.myapp.order.service.OrderService.cancelOrder(OrderService.java:92)
+              at com.myapp.order.service.OrderServiceTest.testCancelOrder(OrderServiceTest.java:78)
+
+          [ERROR] OrderServiceTest.testBulkUpdate:102
+          org.springframework.dao.DataIntegrityViolationException: could not execute statement; SQL [n/a]; constraint [uk_order_reference]
+
+          [INFO] BUILD FAILURE
+          [INFO] Total time:  18.456 s
+        relevant_lines:
+          - "[ERROR] Tests run: 12, Failures: 2, Errors: 1, Skipped: 0"
+          - "java.lang.NullPointerException: Cannot invoke \"com.myapp.order.model.Order.getStatus()\" because \"order\" is null"
+          - "org.springframework.dao.DataIntegrityViolationException: could not execute statement; SQL [n/a]; constraint [uk_order_reference]"
+
+  pip_install:
+    description: "pip install output including C extension compilation failures, version conflicts, dependency resolution backtracking, and platform-specific build errors"
+    samples: 100
+    scenarios:
+      - "C extension compilation failing due to missing system headers"
+      - "Dependency resolution backtracking causing extremely slow installs"
+      - "Version conflict between pinned dependencies and transitive requirements"
+      - "Platform-specific wheel not available, falling back to source build"
+      - "pip install failing in Docker due to missing build tools"
+    seed_examples:
+      - task: "Fix the pip install failure for the ML training environment"
+        tool_output: |
+          $ pip install -r requirements.txt
+          Collecting numpy==1.26.4
+            Downloading numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.whl (18.3 MB)
+          Collecting scipy==1.12.0
+            Downloading scipy-1.12.0.tar.gz (57.5 MB)
+            Installing build dependencies ... done
+            Getting requirements to build wheel ... done
+            Building wheel for scipy (pyproject.toml) ... error
+            error: subprocess-exited-with-error
+
+            Building wheel for scipy (pyproject.toml) did not run successfully.
+            exit code: 1
+
+            [24 lines of output]
+            ...
+            meson.build:1:0: ERROR: Unknown compiler(s): [['gfortran'], ['flang-new'], ['ifx'], ['ifort'], ['f95']]
+            The following exception(s) were encountered:
+            ...no Fortran compiler found
+
+            note: This error originates from a subprocess, and is likely not a problem with pip.
+          ERROR: Failed building wheel for scipy
+          ERROR: Could not build wheels for scipy, which is required to install pyproject.toml-based projects
+        relevant_lines:
+          - "Building wheel for scipy (pyproject.toml) ... error"
+          - "meson.build:1:0: ERROR: Unknown compiler(s): [['gfortran'], ['flang-new'], ['ifx'], ['ifort'], ['f95']]"
+          - "ERROR: Could not build wheels for scipy, which is required to install pyproject.toml-based projects"
+      - task: "Investigate why pip install takes 30 minutes due to dependency resolution"
+        tool_output: |
+          $ pip install -r requirements.txt
+          Collecting django==4.2.11
+            Using cached Django-4.2.11-py3-none-any.whl (8.0 MB)
+          Collecting celery==5.3.6
+            Using cached celery-5.3.6-py3-none-any.whl (422 kB)
+          INFO: pip is looking at multiple versions of kombu to determine which version is compatible with other requirements. This could take a while.
+          INFO: pip is looking at multiple versions of celery to determine which version is compatible with other requirements. This could take a while.
+          Collecting kombu<6.0,>=5.3.4
+            Downloading kombu-5.3.5-py3-none-any.whl (200 kB)
+            Downloading kombu-5.3.4-py3-none-any.whl (200 kB)
+          INFO: This is taking longer than usual. You might want to provide more specific version constraints.
+          ERROR: Cannot install celery==5.3.6 and redis==4.5.0 because these package versions have conflicting dependencies.
+
+          The conflict is caused by:
+              celery 5.3.6 depends on redis>=4.5.1
+              The user requested redis==4.5.0
+
+          To fix this you could try to:
+          1. loosen the range of package versions you've specified
+          2. remove package versions to allow pip to attempt to solve the dependency conflict
+        relevant_lines:
+          - "INFO: pip is looking at multiple versions of celery to determine which version is compatible with other requirements. This could take a while."
+          - "ERROR: Cannot install celery==5.3.6 and redis==4.5.0 because these package versions have conflicting dependencies."
+          - "celery 5.3.6 depends on redis>=4.5.1"
+      - task: "Debug the cryptography package build failure in the Alpine Docker container"
+        tool_output: |
+          $ pip install cryptography==42.0.5
+          Collecting cryptography==42.0.5
+            Downloading cryptography-42.0.5.tar.gz (710 kB)
+            Installing build dependencies ... done
+            Getting requirements to build wheel ... done
+            Building wheel for cryptography (PEP 517) ... error
+            error: subprocess-exited-with-error
+
+            cargo rustc --lib --message-format=json-render-diagnostics --manifest-path ...
+            error: linker `cc` not found
+              |
+              = note: No such file or directory (os error 2)
+
+            error: could not compile `cryptography-rust` (lib) due to previous error
+
+            Caused by: installing from source requires:
+              1. Rust toolchain (rustc, cargo) >= 1.63.0
+              2. C compiler (gcc/clang)
+              3. OpenSSL development headers (openssl-dev / libssl-dev)
+
+            hint: Consider using `pip install cryptography --only-binary=:all:` to avoid building from source.
+        relevant_lines:
+          - "error: linker `cc` not found"
+          - "error: could not compile `cryptography-rust` (lib) due to previous error"
+          - "hint: Consider using `pip install cryptography --only-binary=:all:` to avoid building from source."
+
+  mypy_pyright:
+    description: "mypy/pyright Python type checking output including type errors, missing stubs, incompatible return types, and generic type issues"
+    samples: 100
+    scenarios:
+      - "Strict mode revealing missing type annotations in legacy code"
+      - "Incompatible types between library stubs and actual usage"
+      - "Generic type inference failures in decorator patterns"
+      - "Protocol/structural subtyping errors in plugin architecture"
+      - "Overloaded function signatures not matching call sites"
+    seed_examples:
+      - task: "Fix the mypy errors after enabling strict mode on the data pipeline"
+        tool_output: |
+          $ mypy src/pipeline/ --strict
+          src/pipeline/loader.py:12: error: Function is missing a type annotation  [no-untyped-def]
+          src/pipeline/loader.py:34: error: Incompatible return value type (got "Optional[DataFrame]", expected "DataFrame")  [return-value]
+          src/pipeline/loader.py:45: error: "dict[str, Any]" has no attribute "items_list"  [attr-defined]
+          src/pipeline/transform.py:8: error: Missing type parameters for generic type "Callable"  [type-arg]
+          src/pipeline/transform.py:23: error: Argument 1 to "apply_transforms" has incompatible type "list[dict[str, str]]"; expected "list[TransformConfig]"  [arg-type]
+          src/pipeline/transform.py:56: error: Incompatible types in assignment (expression has type "str", variable has type "int")  [assignment]
+          src/pipeline/output.py:15: error: Cannot find implementation or library stub for module named "pandas_gbq"  [import-untyped]
+          src/pipeline/output.py:29: error: Item "None" of "Optional[Connection]" has no attribute "execute"  [union-attr]
+          Found 8 errors in 3 files (checked 5 source files)
+        relevant_lines:
+          - "error: Incompatible return value type (got \"Optional[DataFrame]\", expected \"DataFrame\")  [return-value]"
+          - "error: \"dict[str, Any]\" has no attribute \"items_list\"  [attr-defined]"
+          - "Found 8 errors in 3 files (checked 5 source files)"
+      - task: "Resolve pyright type errors in the FastAPI route handlers"
+        tool_output: |
+          $ pyright src/api/
+          /home/dev/src/api/routes/users.py
+            /home/dev/src/api/routes/users.py:18:12 - error: Expression of type "User | None" is incompatible with declared type "User"
+              "User | None" is not assignable to "User"
+                "None" is not assignable to "User" (reportGeneralClassIssues)
+            /home/dev/src/api/routes/users.py:34:5 - error: Cannot access attribute "full_name" for class "UserCreate"
+              Attribute "full_name" is unknown (reportAttributeAccessIssue)
+            /home/dev/src/api/routes/users.py:45:24 - error: Argument of type "dict[str, str | int]" cannot be assigned to parameter "data" of type "UserUpdate" in function "update_user"
+              "dict[str, str | int]" is not assignable to "UserUpdate" (reportArgumentType)
+          /home/dev/src/api/dependencies.py
+            /home/dev/src/api/dependencies.py:12:1 - error: Return type of generator function must be "Generator" or "AsyncGenerator"
+              Actual return type is "Coroutine[Any, Any, Session]" (reportReturnType)
+            /home/dev/src/api/dependencies.py:28:9 - error: "db" is possibly unbound (reportPossiblyUnbound)
+          5 errors, 0 warnings, 0 informations
+        relevant_lines:
+          - "Expression of type \"User | None\" is incompatible with declared type \"User\""
+          - "Cannot access attribute \"full_name\" for class \"UserCreate\""
+          - "5 errors, 0 warnings, 0 informations"
+      - task: "Fix the mypy errors in the plugin system that uses Protocol classes"
+        tool_output: |
+          $ mypy src/plugins/ --show-error-codes
+          src/plugins/base.py:34: error: Class "FileExporter" has no attribute "compress"  [attr-defined]
+          src/plugins/base.py:35: note: "BaseExporter" has "compress" with type "bool"
+          src/plugins/base.py:35: note: "FileExporter" does not define "compress"
+          src/plugins/registry.py:18: error: Argument 1 to "register" has incompatible type "type[CSVExporter]"; expected "type[ExporterProtocol]"  [arg-type]
+          src/plugins/registry.py:18: note: Following member(s) of "CSVExporter" have conflicts:
+          src/plugins/registry.py:18: note:     Expected:
+          src/plugins/registry.py:18: note:         def export(self, data: DataFrame, path: Path) -> None
+          src/plugins/registry.py:18: note:     Got:
+          src/plugins/registry.py:18: note:         def export(self, data: DataFrame, path: str) -> None
+          src/plugins/loader.py:22: error: Return type "dict[str, Any]" of "load_config" incompatible with return type "PluginConfig" in supertype "BasePlugin"  [override]
+          Found 3 errors in 3 files (checked 6 source files)
+        relevant_lines:
+          - "error: Class \"FileExporter\" has no attribute \"compress\"  [attr-defined]"
+          - "error: Argument 1 to \"register\" has incompatible type \"type[CSVExporter]\"; expected \"type[ExporterProtocol]\"  [arg-type]"
+          - "error: Return type \"dict[str, Any]\" of \"load_config\" incompatible with return type \"PluginConfig\" in supertype \"BasePlugin\"  [override]"
+
+  curl:
+    description: "curl / wget HTTP responses — JSON APIs, HTML docs, error pages, raw config files, GraphQL responses"
+    samples: 200
+    scenarios:
+      - "JSON REST API response with nested objects and pagination"
+      - "HTML documentation page with code examples"
+      - "HTTP error response (401/403/404/500) with JSON or HTML body"
+      - "Raw file download from GitHub or CDN (config, schema, manifest)"
+      - "GraphQL API response with data and errors"
+    seed_examples:
+      - task: "Debug why the user creation endpoint returns 422 when sending valid data"
+        tool_output: |
+          $ curl -s -X POST https://api.example.com/v1/users \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer eyJhbGciOi..." \
+            -d '{"name": "Alice", "email": "alice@test.com", "role": "admin"}'
+          HTTP/1.1 422 Unprocessable Entity
+          Content-Type: application/json
+          X-Request-Id: req_8f3a2b1c
+          Date: Mon, 03 Mar 2025 14:22:08 GMT
+
+          {
+            "error": {
+              "code": "validation_error",
+              "message": "Request body validation failed",
+              "details": [
+                {
+                  "field": "role",
+                  "message": "Value 'admin' is not a valid enum member. Expected: 'user', 'editor', 'viewer'",
+                  "code": "invalid_enum"
+                }
+              ]
+            },
+            "request_id": "req_8f3a2b1c"
+          }
+        relevant_lines:
+          - "HTTP/1.1 422 Unprocessable Entity"
+          - "\"field\": \"role\","
+          - "\"message\": \"Value 'admin' is not a valid enum member. Expected: 'user', 'editor', 'viewer'\","
+      - task: "Check if the /health endpoint returns the correct database connection status"
+        tool_output: |
+          $ curl -s https://api.myservice.io/health | jq .
+          {
+            "status": "degraded",
+            "version": "3.2.1",
+            "uptime_seconds": 84312,
+            "checks": {
+              "database": {
+                "status": "unhealthy",
+                "latency_ms": null,
+                "error": "connection refused: could not connect to server: Connection refused\n\tIs the server running on host \"db-primary.internal\" (10.0.3.42) and accepting TCP/IP connections on port 5432?"
+              },
+              "redis": {
+                "status": "healthy",
+                "latency_ms": 2
+              },
+              "s3": {
+                "status": "healthy",
+                "latency_ms": 45
+              }
+            },
+            "timestamp": "2025-03-03T14:30:00Z"
+          }
+        relevant_lines:
+          - "\"status\": \"degraded\","
+          - "\"database\": {"
+          - "\"status\": \"unhealthy\","
+          - "\"error\": \"connection refused: could not connect to server: Connection refused\\n\\tIs the server running on host \\\"db-primary.internal\\\" (10.0.3.42) and accepting TCP/IP connections on port 5432?\""
+      - task: "Fetch the OpenAPI spec to check the correct request format for the batch import endpoint"
+        tool_output: |
+          $ curl -s https://api.example.com/v3/openapi.json | jq '.paths["/batch/import"]'
+          {
+            "post": {
+              "summary": "Batch import records",
+              "operationId": "batchImport",
+              "tags": ["batch"],
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/BatchImportRequest"
+                    }
+                  },
+                  "multipart/form-data": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string",
+                          "format": "binary"
+                        },
+                        "options": {
+                          "$ref": "#/components/schemas/ImportOptions"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "202": {
+                  "description": "Import job accepted",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "$ref": "#/components/schemas/BatchJob"
+                      }
+                    }
+                  }
+                },
+                "413": {
+                  "description": "Payload too large (max 50MB)"
+                },
+                "429": {
+                  "description": "Rate limit exceeded"
+                }
+              }
+            }
+          }
+        relevant_lines:
+          - "\"summary\": \"Batch import records\","
+          - "\"$ref\": \"#/components/schemas/BatchImportRequest\""
+          - "\"multipart/form-data\": {"
+          - "\"format\": \"binary\""
+          - "\"413\": {"
+          - "\"description\": \"Payload too large (max 50MB)\""
+
+  # --- SWE-bench-style Python/general dev tools ---
+
+  read_file:
+    description: "Source code file contents with line numbers, as shown by cat -n or an editor"
+    samples: 200
+    scenarios:
+      - "Python module with class definitions and a subtle bug in error handling"
+      - "JavaScript/TypeScript React component with state management issue"
+      - "Configuration file (YAML/TOML/JSON) with a misconfigured setting"
+      - "Test file with failing test cases and fixtures"
+      - "Go or Rust source file with a concurrency bug"
+    seed_examples:
+      - task: "Fix the race condition in the connection pool that causes intermittent timeout errors under load"
+        tool_output: |
+          1: import threading
+          2: import time
+          3: from collections import deque
+          4: from contextlib import contextmanager
+          5:
+          6:
+          7: class ConnectionPool:
+          8:     def __init__(self, max_size=10, timeout=30):
+          9:         self._pool = deque()
+          10:         self._max_size = max_size
+          11:         self._timeout = timeout
+          12:         self._current_size = 0
+          13:         self._lock = threading.Lock()
+          14:
+          15:     def _create_connection(self):
+          16:         """Create a new database connection."""
+          17:         self._current_size += 1
+          18:         return DatabaseConnection(host="db-primary", port=5432)
+          19:
+          20:     @contextmanager
+          21:     def acquire(self):
+          22:         conn = None
+          23:         try:
+          24:             conn = self._pool.popleft()
+          25:         except IndexError:
+          26:             if self._current_size < self._max_size:
+          27:                 conn = self._create_connection()
+          28:             else:
+          29:                 time.sleep(0.1)
+          30:                 conn = self._pool.popleft()
+          31:         try:
+          32:             yield conn
+          33:         finally:
+          34:             if conn is not None:
+          35:                 self._pool.append(conn)
+          36:
+          37:     def close_all(self):
+          38:         while self._pool:
+          39:             conn = self._pool.popleft()
+          40:             conn.close()
+          41:             self._current_size -= 1
+        relevant_lines:
+          - "        self._current_size += 1"
+          - "        try:"
+          - "            conn = self._pool.popleft()"
+          - "        except IndexError:"
+          - "            if self._current_size < self._max_size:"
+          - "                conn = self._create_connection()"
+          - "            else:"
+          - "                time.sleep(0.1)"
+          - "                conn = self._pool.popleft()"
+
+  grep_output:
+    description: "grep/ripgrep search results across a codebase showing matching lines with file paths and line numbers"
+    samples: 150
+    scenarios:
+      - "Searching for a function definition used in a stack trace"
+      - "Finding all imports of a deprecated module"
+      - "Searching for hardcoded credentials or config values"
+      - "Finding all usages of an API endpoint that needs updating"
+      - "Searching for error message strings to find where an exception is raised"
+    seed_examples:
+      - task: "Find where the deprecated authenticate() method is called so we can migrate to the new verify_credentials() API"
+        tool_output: |
+          src/auth/middleware.py:45:    user = authenticate(request.headers.get("Authorization"))
+          src/auth/middleware.py:89:    # authenticate returns None for invalid tokens
+          src/auth/backends.py:12:def authenticate(token: str) -> User | None:
+          src/auth/backends.py:34:    """Legacy authenticate method - use verify_credentials instead."""
+          src/api/views.py:78:        user = authenticate(api_key)
+          src/api/views.py:112:        # Re-authenticate on token refresh
+          src/api/views.py:113:        new_user = authenticate(refreshed_token)
+          src/tests/test_auth.py:23:    result = authenticate("valid-token-123")
+          src/tests/test_auth.py:45:    result = authenticate("expired-token")
+          src/tests/test_auth.py:67:    result = authenticate("")
+          docs/api.md:89:The `authenticate()` function accepts a bearer token and returns
+          docs/migration.md:12:Replace all calls to `authenticate()` with `verify_credentials()`.
+          CHANGELOG.md:34:- Deprecated `authenticate()` in favor of `verify_credentials()`
+        relevant_lines:
+          - "src/auth/middleware.py:45:    user = authenticate(request.headers.get(\"Authorization\"))"
+          - "src/auth/backends.py:12:def authenticate(token: str) -> User | None:"
+          - "src/api/views.py:78:        user = authenticate(api_key)"
+          - "src/api/views.py:112:        # Re-authenticate on token refresh"
+          - "src/api/views.py:113:        new_user = authenticate(refreshed_token)"
+
+  git_log_output:
+    description: "git log output showing commit history with hashes, authors, dates, and messages"
+    samples: 100
+    scenarios:
+      - "Recent commits on a feature branch showing a regression introduction"
+      - "Commit history of a specific file that was recently refactored"
+      - "Merge commits and branch history showing conflicting changes"
+      - "Blame-style log showing who last modified critical lines"
+      - "Release tag history with version bumps"
+    seed_examples:
+      - task: "Find which commit introduced the memory leak in the cache module that started after last Tuesday's deploy"
+        tool_output: |
+          a3f8c21 (HEAD -> main) Merge pull request #892 from feature/redis-cache
+          b7e2d14 fix: update CI config for Python 3.12
+          c9a1f03 docs: add API rate limiting section
+          d4b5e76 feat: add Redis connection pooling to cache module
+          e8c2a19 fix: handle None values in serializer
+          f1d3b82 refactor: extract cache backend interface
+          g5a7c94 feat: implement LRU eviction policy
+          h2e8d15 fix: close database connections on shutdown
+          i6b9f27 chore: bump redis-py to 4.5.0
+          j3c1a48 feat: add cache warming on startup
+          k8d4e59 fix: prevent duplicate cache entries
+          l2f6b71 refactor: move cache config to settings.py
+          m9a3c82 deploy: tag v2.4.1
+          n5e7d93 fix: increase connection timeout to 30s
+          o1b8f04 feat: add cache metrics endpoint
+        relevant_lines:
+          - "d4b5e76 feat: add Redis connection pooling to cache module"
+          - "f1d3b82 refactor: extract cache backend interface"
+          - "g5a7c94 feat: implement LRU eviction policy"
+          - "i6b9f27 chore: bump redis-py to 4.5.0"
+          - "j3c1a48 feat: add cache warming on startup"
+
+  git_diff_output:
+    description: "git diff output showing file changes with hunks, added/removed lines, and context"
+    samples: 100
+    scenarios:
+      - "Diff of a bug fix showing the exact lines changed"
+      - "Large refactoring diff across multiple files"
+      - "Merge conflict markers in a diff"
+      - "Diff showing an accidental deletion or regression"
+      - "Config file changes between environments"
+    seed_examples:
+      - task: "Review the diff to find why the API now returns 500 errors on the /users endpoint after the last commit"
+        tool_output: |
+          diff --git a/src/api/users.py b/src/api/users.py
+          index 3a4b5c6..7d8e9f0 100644
+          --- a/src/api/users.py
+          +++ b/src/api/users.py
+          @@ -45,7 +45,7 @@ class UserView(APIView):
+               def get(self, request, user_id):
+                   try:
+          -            user = User.objects.get(pk=user_id)
+          +            user = User.objects.get(pk=user_id, is_active=True)
+                   except User.DoesNotExist:
+                       return Response(status=404)
+
+          @@ -67,12 +67,8 @@ class UserView(APIView):
+               def put(self, request, user_id):
+                   serializer = UserSerializer(data=request.data)
+          -        if serializer.is_valid():
+          -            user = serializer.save()
+          -            return Response(UserSerializer(user).data)
+          -        return Response(serializer.errors, status=400)
+          +        serializer.is_valid(raise_exception=True)
+          +        user = serializer.save()
+          +        return Response(UserSerializer(user).data)
+
+           diff --git a/src/api/serializers.py b/src/api/serializers.py
+          index 1a2b3c4..5d6e7f8 100644
+          --- a/src/api/serializers.py
+          +++ b/src/api/serializers.py
+          @@ -12,6 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
+               class Meta:
+                   model = User
+          -        fields = ['id', 'username', 'email']
+          +        fields = ['id', 'username', 'email', 'is_active']
+          +        read_only_fields = ['is_active']
+        relevant_lines:
+          - "-            user = User.objects.get(pk=user_id)"
+          - "+            user = User.objects.get(pk=user_id, is_active=True)"
+          - "-        if serializer.is_valid():"
+          - "+        serializer.is_valid(raise_exception=True)"
+
+  test_output:
+    description: "pytest/unittest/jest/mocha test runner output with pass/fail results, assertions, and tracebacks"
+    samples: 150
+    scenarios:
+      - "Multiple test failures with assertion errors and tracebacks"
+      - "Single flaky test failure with timeout"
+      - "Test collection errors due to import failures"
+      - "Parameterized test with some combinations failing"
+      - "Test output with captured stdout/stderr and warnings"
+    seed_examples:
+      - task: "Fix the failing integration tests for the payment processing module after upgrading Stripe SDK to v5"
+        tool_output: |
+          ========================= test session starts ==========================
+          platform linux -- Python 3.11.5, pytest-7.4.0, pluggy-1.3.0
+          rootdir: /app
+          plugins: asyncio-0.21.1, mock-3.11.1, cov-4.1.0
+          collected 47 items
+
+          tests/unit/test_models.py ....                                   [  8%]
+          tests/unit/test_serializers.py ......                            [ 21%]
+          tests/unit/test_utils.py ...                                     [ 27%]
+          tests/integration/test_payments.py .F.FF.                        [ 40%]
+          tests/integration/test_webhooks.py ....                          [ 48%]
+          tests/integration/test_refunds.py ..F.                           [ 57%]
+          tests/e2e/test_checkout.py ........                              [ 74%]
+          tests/e2e/test_subscription.py ............                      [100%]
+
+          ================================ FAILURES ================================
+          _____________ TestPayments.test_create_charge_with_metadata ______________
+
+          self = <tests.integration.test_payments.TestPayments object at 0x7f3b2c1d5e90>
+
+              def test_create_charge_with_metadata(self):
+                  charge = self.client.create_charge(
+                      amount=2000,
+                      currency="usd",
+          >           metadata={"order_id": "12345"}
+                  )
+          E       TypeError: create_charge() got an unexpected keyword argument 'metadata'
+          E       Hint: In Stripe SDK v5, use `params` dict instead of keyword arguments
+
+          tests/integration/test_payments.py:34: TypeError
+          _____________ TestPayments.test_charge_idempotency ______________________
+
+          self = <tests.integration.test_payments.TestPayments object at 0x7f3b2c1d5f10>
+
+              def test_charge_idempotency(self):
+          >       charge = self.client.create_charge(amount=1000, idempotency_key="key-123")
+          E       TypeError: create_charge() got an unexpected keyword argument 'idempotency_key'
+
+          tests/integration/test_payments.py:52: TypeError
+          _____________ TestRefunds.test_partial_refund ____________________________
+
+          self = <tests.integration.test_refunds.TestRefunds object at 0x7f3b2c1d6010>
+
+              def test_partial_refund(self):
+                  refund = self.client.create_refund(
+          >           charge_id="ch_123", amount=500
+                  )
+          E       stripe.error.InvalidRequestError: Refund amount exceeds charge amount
+
+          tests/integration/test_refunds.py:28: InvalidRequestError
+          ======================== 3 failed, 44 passed ===========================
+        relevant_lines:
+          - "tests/integration/test_payments.py .F.FF.                        [ 40%]"
+          - "tests/integration/test_refunds.py ..F.                           [ 57%]"
+          - "E       TypeError: create_charge() got an unexpected keyword argument 'metadata'"
+          - "E       Hint: In Stripe SDK v5, use `params` dict instead of keyword arguments"
+          - "E       TypeError: create_charge() got an unexpected keyword argument 'idempotency_key'"
+          - "E       stripe.error.InvalidRequestError: Refund amount exceeds charge amount"
+          - "======================== 3 failed, 44 passed ==========================="
+
+  python_output:
+    description: "Python script or REPL output including print statements, tracebacks, debug info, and profiling"
+    samples: 100
+    scenarios:
+      - "Script output with a traceback showing the root cause of a crash"
+      - "Debug print statements showing variable state leading to a bug"
+      - "Profiling output showing performance bottlenecks"
+      - "Data inspection output (DataFrame info, shape, dtypes)"
+      - "Import or startup errors with version conflicts"
+    seed_examples:
+      - task: "Debug why the data pipeline crashes when processing records with unicode characters in the name field"
+        tool_output: |
+          $ python -c "from pipeline import process_batch; process_batch('input.csv')"
+          Loading config from /etc/pipeline/config.yaml
+          Connecting to database... OK
+          Processing batch: input.csv (2847 records)
+          Batch 1/3: processing records 0-999...
+          Batch 1/3: 1000 records processed in 2.3s
+          Batch 2/3: processing records 1000-1999...
+          Batch 2/3: 1000 records processed in 2.1s
+          Batch 3/3: processing records 2000-2847...
+          Traceback (most recent call last):
+            File "<string>", line 1, in <module>
+            File "/app/pipeline.py", line 89, in process_batch
+              cleaned = clean_record(record)
+            File "/app/pipeline.py", line 45, in clean_record
+              name = record["name"].encode("ascii")
+          UnicodeEncodeError: 'ascii' codec can't encode character '\xe9' in position 3: ordinal not in range(128)
+
+          Record causing failure: {"id": 2341, "name": "José García", "email": "jose@example.com"}
+          Pipeline failed after processing 2340/2847 records.
+        relevant_lines:
+          - "Traceback (most recent call last):"
+          - "    File \"/app/pipeline.py\", line 45, in clean_record"
+          - "      name = record[\"name\"].encode(\"ascii\")"
+          - "UnicodeEncodeError: 'ascii' codec can't encode character '\\xe9' in position 3: ordinal not in range(128)"
+          - "Record causing failure: {\"id\": 2341, \"name\": \"José García\", \"email\": \"jose@example.com\"}"
+
+  lint_output:
+    description: "Linter output from ruff, flake8, eslint, or similar tools showing code quality issues"
+    samples: 100
+    scenarios:
+      - "Multiple lint errors in a module after refactoring"
+      - "Unused import and variable warnings"
+      - "Security-related lint findings (SQL injection, hardcoded secrets)"
+      - "Style violations mixed with real bugs"
+      - "Type annotation and complexity warnings"
+    seed_examples:
+      - task: "Fix the ruff violations in the auth module before merging the PR"
+        tool_output: |
+          $ ruff check src/auth/
+          src/auth/__init__.py:3:1: F401 [*] `auth.legacy.authenticate` imported but unused
+          src/auth/middleware.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+          src/auth/middleware.py:12:5: E722 Do not use bare `except`
+          src/auth/middleware.py:34:80: E501 Line too long (127 > 79)
+          src/auth/middleware.py:45:9: B006 Do not use mutable data structures for argument defaults
+          src/auth/backends.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+          src/auth/backends.py:23:5: S106 Possible hardcoded password assigned to argument: "default_password"
+          src/auth/backends.py:67:9: C901 `verify_token` is too complex (15 > 10)
+          src/auth/backends.py:89:13: B904 Within an `except` clause, raise exceptions with `raise ... from err`
+          src/auth/permissions.py:4:1: F401 [*] `typing.Optional` imported but unused
+          src/auth/permissions.py:15:5: UP007 [*] Use `X | Y` for union type annotations
+          Found 11 errors.
+          [*] 4 fixable with the `--fix` option.
+        relevant_lines:
+          - "src/auth/middleware.py:12:5: E722 Do not use bare `except`"
+          - "src/auth/middleware.py:45:9: B006 Do not use mutable data structures for argument defaults"
+          - "src/auth/backends.py:23:5: S106 Possible hardcoded password assigned to argument: \"default_password\""
+          - "src/auth/backends.py:67:9: C901 `verify_token` is too complex (15 > 10)"
+          - "src/auth/backends.py:89:13: B904 Within an `except` clause, raise exceptions with `raise ... from err`"
+
+  build_output:
+    description: "Build system output from pip install, setup.py, cmake, make showing compilation results, dependency resolution, and errors"
+    samples: 100
+    scenarios:
+      - "pip install -e . failing with C extension compilation errors"
+      - "Missing system dependencies during package build"
+      - "Version conflict between installed and required packages"
+      - "Successful build with deprecation warnings"
+      - "Partial build failure in a monorepo with multiple packages"
+    seed_examples:
+      - task: "Fix the build failure when installing the project in development mode on a fresh environment"
+        tool_output: |
+          $ pip install -e .
+          Obtaining file:///home/dev/project
+            Installing build dependencies ... done
+            Getting requirements to build wheel ... done
+            Preparing metadata (pyproject.toml) ... done
+          Collecting numpy>=1.24.0 (from project==0.1.0)
+            Using cached numpy-1.26.4-cp311-cp311-linux_x86_64.whl (18.3 MB)
+          Collecting pandas>=2.0.0 (from project==0.1.0)
+            Using cached pandas-2.1.4-cp311-cp311-linux_x86_64.whl (12.4 MB)
+          Collecting scipy>=1.11.0 (from project==0.1.0)
+            Using cached scipy-1.11.4-cp311-cp311-linux_x86_64.whl (36.4 MB)
+          Collecting cryptography>=41.0.0 (from project==0.1.0)
+            Using cached cryptography-41.0.7.tar.gz (630 kB)
+            Installing build dependencies ... done
+            Getting requirements to build wheel ... error
+            error: subprocess-exited-with-error
+
+            × Getting requirements to build wheel did not run successfully.
+            │ exit code: 1
+            ╰─> [15 lines of output]
+                  Traceback (most recent call last):
+                    File "/tmp/pip-build-env/lib/python3.11/site-packages/setuptools/build_meta.py", line 325
+                      return self._get_build_requires(config_settings, requirements)
+                    File "/tmp/pip-build-env/overlay/lib/python3.11/cffi/ffiplatform.py", line 22
+                      raise OSError("Cannot find OpenSSL headers. Install libssl-dev or openssl-devel.")
+                  OSError: Cannot find OpenSSL headers. Install libssl-dev or openssl-devel.
+                  [end of output]
+
+            note: This error originates from a subprocess, and is likely not a problem with pip.
+          error: subprocess-exited-with-error
+        relevant_lines:
+          - "Collecting cryptography>=41.0.0 (from project==0.1.0)"
+          - "    Getting requirements to build wheel ... error"
+          - "                  raise OSError(\"Cannot find OpenSSL headers. Install libssl-dev or openssl-devel.\")"
+          - "                OSError: Cannot find OpenSSL headers. Install libssl-dev or openssl-devel."

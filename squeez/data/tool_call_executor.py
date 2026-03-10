@@ -216,6 +216,58 @@ def execute_lint_output(
     return truncate_output(output, max_lines)
 
 
+# Repos where the importable package name differs from the repo slug.
+_REPO_IMPORT_OVERRIDES = {
+    "scikit-learn": "sklearn",
+    "scikit-image": "skimage",
+    "pillow": "PIL",
+    "pyyaml": "yaml",
+    "python-dateutil": "dateutil",
+    "beautifulsoup4": "bs4",
+}
+
+
+def _guess_import_name(repo: str) -> str | None:
+    """Guess the importable Python module name from a GitHub repo name.
+
+    Uses known overrides for common packages where the import name
+    differs from the repo slug. Returns None if we can't determine it.
+    """
+    if "/" in repo:
+        repo_name = repo.split("/")[1]
+    else:
+        repo_name = repo
+
+    # Check known overrides first
+    lower = repo_name.lower()
+    if lower in _REPO_IMPORT_OVERRIDES:
+        return _REPO_IMPORT_OVERRIDES[lower]
+
+    return repo_name.replace("-", "_")
+
+
+def _check_base_import(worktree: str, instance: dict) -> bool:
+    """Check if the base module can be imported in the worktree.
+
+    Returns True if import succeeds (safe to run tests), False otherwise.
+    Skips the check (returns True) if we can't determine the module name.
+    """
+    base_module = _guess_import_name(instance.get("repo", ""))
+    if not base_module:
+        return True  # Can't determine module, let pytest try
+
+    result = _run_cmd(
+        f'cd {worktree} && python -c "import {base_module}" 2>&1',
+        cwd=worktree,
+        timeout=15,
+        shell=True,
+    )
+    # If the command returned an error traceback, import failed
+    if result and ("ModuleNotFoundError" in result or "ImportError" in result):
+        return False
+    return True
+
+
 def execute_test_output(
     call: dict,
     repo_dir: Path,
@@ -227,8 +279,14 @@ def execute_test_output(
     """Run real pytest on the worktree.
 
     Uses FAIL_TO_PASS test names for targeted test execution.
+    Performs an import pre-check to skip environments that can't run tests.
     """
     if not worktree:
+        return None
+
+    # Pre-check: can the base module be imported?
+    if not _check_base_import(worktree, instance):
+        logger.debug(f"Skipping test_output for {instance.get('instance_id')}: base import failed")
         return None
 
     fail_to_pass = call.get("fail_to_pass", instance.get("FAIL_TO_PASS", ""))
@@ -305,8 +363,72 @@ def execute_curl(call: dict, max_lines: int) -> str | None:
     return truncate_output(output, max_lines)
 
 
+def execute_pip_install(
+    call: dict, repo_dir: Path, commit: str, max_lines: int, worktree: str | None = None
+) -> str | None:
+    """Run pip install -e . in the worktree."""
+    if not worktree:
+        return None
+
+    cmd = call.get("command", "pip install -e . 2>&1")
+    full_cmd = f"cd {worktree} && {cmd} || true"
+    output = _run_cmd(full_cmd, cwd=worktree, timeout=120, shell=True)
+    if not output:
+        return None
+    return truncate_output(output, max_lines)
+
+
+def execute_type_check(
+    call: dict, repo_dir: Path, commit: str, max_lines: int, worktree: str | None = None
+) -> str | None:
+    """Run mypy on a file in the worktree."""
+    if not worktree:
+        return None
+
+    target = call.get("target_file", "")
+    if not target:
+        return None
+
+    target_path = Path(worktree) / target
+    if not target_path.exists():
+        return None
+
+    cmd = f"cd {worktree} && python -m mypy {target} --no-error-summary 2>&1 || true"
+    output = _run_cmd(cmd, cwd=worktree, timeout=60, shell=True)
+    if not output:
+        return None
+    return truncate_output(output, max_lines)
+
+
+def execute_coverage(
+    call: dict, repo_dir: Path, commit: str, max_lines: int, worktree: str | None = None
+) -> str | None:
+    """Run pytest with coverage in the worktree."""
+    if not worktree:
+        return None
+
+    cmd = call.get("command", "")
+    if not cmd:
+        return None
+
+    full_cmd = f"cd {worktree} && {cmd} || true"
+    output = _run_cmd(full_cmd, cwd=worktree, timeout=120, shell=True)
+    if not output:
+        return None
+    return truncate_output(output, max_lines)
+
+
 # Commands that need a working tree (not just bare repo)
-WORKTREE_TOOLS = {"ls", "lint_output", "test_output", "python", "build_output"}
+WORKTREE_TOOLS = {
+    "ls",
+    "lint_output",
+    "test_output",
+    "python",
+    "build_output",
+    "pip_install",
+    "type_check",
+    "coverage",
+}
 
 
 def execute_tool_call(
@@ -354,6 +476,12 @@ def execute_tool_call(
         output = execute_build_output(call, repo_dir, commit, max_lines, worktree)
     elif tool_type == "curl":
         output = execute_curl(call, max_lines)
+    elif tool_type == "pip_install":
+        output = execute_pip_install(call, repo_dir, commit, max_lines, worktree)
+    elif tool_type == "type_check":
+        output = execute_type_check(call, repo_dir, commit, max_lines, worktree)
+    elif tool_type == "coverage":
+        output = execute_coverage(call, repo_dir, commit, max_lines, worktree)
     else:
         logger.warning(f"Unknown tool type: {tool_type}")
         return None

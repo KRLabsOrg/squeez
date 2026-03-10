@@ -64,7 +64,8 @@ def _format_prompt(task: str, tool_output: str) -> str:
 
     return (
         f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
-        f"<|im_start|>user\nTask: {task}\n\n{tool_output}<|im_end|>\n"
+        f"<|im_start|>user\n<task>\n{task}\n</task>\n"
+        f"<tool_output>\n{tool_output}\n</tool_output><|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
 
@@ -252,15 +253,13 @@ class ToolOutputExtractor:
         else:
             raw = self._extract_transformers(task, tool_output, max_new_tokens, temperature)
 
-        # Parse JSON response
-        try:
-            import json
+        # Parse <relevant_lines> XML response
+        import re
 
-            data = json.loads(raw)
-            lines = data.get("relevant_lines", [])
-            return "\n".join(lines)
-        except (json.JSONDecodeError, TypeError):
-            return raw
+        m = re.search(r"<relevant_lines>\s*\n?(.*?)\n?\s*</relevant_lines>", raw, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+        return raw
 
     def _extract_encoder(self, task: str, tool_output: str) -> str:
         """Extract using encoder-based line classifier."""
@@ -278,7 +277,11 @@ class ToolOutputExtractor:
         if len(task) > 3000:
             task = task[:3000] + "..."
 
-        user_content = f"Task: {task}\n\n{tool_output}" if task else tool_output
+        user_content = (
+            f"<task>\n{task}\n</task>\n<tool_output>\n{tool_output}\n</tool_output>"
+            if task
+            else f"<tool_output>\n{tool_output}\n</tool_output>"
+        )
 
         response = self._client.chat.completions.create(
             model=self._model_name,

@@ -43,7 +43,6 @@ def run_pipeline(config: PipelineConfig, phases: list[int] | None = None):
     labeled_samples = None
     distilled_samples = None
     train_samples = None
-    eval_samples = None
 
     # Phase 1: Load SWE-bench instances
     if 1 in phases:
@@ -177,25 +176,29 @@ def run_pipeline(config: PipelineConfig, phases: list[int] | None = None):
 
         from squeez.data.sample_assembler import assemble_samples
 
-        train_samples, eval_samples = assemble_samples(distilled_samples, instances, config)
-        logger.info(f"Phase 7 complete: {len(train_samples)} train + {len(eval_samples)} eval")
+        train_samples, dev_samples, test_samples = assemble_samples(
+            distilled_samples, instances, config
+        )
+        logger.info(
+            f"Phase 7 complete: {len(train_samples)} train + {len(dev_samples)} dev + {len(test_samples)} test"
+        )
 
     # Phase 8: Validate
     if 8 in phases:
         logger.info("=" * 60)
         logger.info("Phase 8: Validating dataset")
         logger.info("=" * 60)
-        if train_samples is None or eval_samples is None:
+        if train_samples is None or test_samples is None:
             import json
 
             train_path = config.output_dir / "train.jsonl"
-            eval_path = config.output_dir / "eval.jsonl"
+            test_path = config.output_dir / "test.jsonl"
             train_samples = [json.loads(line) for line in open(train_path)]
-            eval_samples = [json.loads(line) for line in open(eval_path)]
+            test_samples = [json.loads(line) for line in open(test_path)]
 
         from squeez.data.validator import validate_dataset, write_validation_report
 
-        report = validate_dataset(train_samples, eval_samples, config)
+        report = validate_dataset(train_samples, test_samples, config)
         report_path = write_validation_report(report, config)
         logger.info(f"Phase 8 complete: report at {report_path}")
 

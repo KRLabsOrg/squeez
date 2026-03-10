@@ -31,7 +31,7 @@ From 42 lines of middleware code, squeez extracts only the 8 lines relevant to t
 - **Two backends** — vLLM server (fast) or local transformers (no server)
 - **Config-driven** — YAML config, env vars, or CLI args
 - **Agent-ready** — works with Claude Code, Codex CLI, OpenCode via instruction files
-- **Open dataset** — [7.5K samples](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) from real SWE-bench tool execution
+- **Open dataset** — [9K samples](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) from real SWE-bench tool execution + synthetic multi-ecosystem data
 
 ## Links
 

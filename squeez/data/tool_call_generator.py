@@ -61,19 +61,22 @@ def _pick_tool_types(n: int) -> list[str]:
 def _generate_read_file_call(patch_files: list[str], sibling_files: list[str]) -> dict:
     """Generate a read_file tool call spec.
 
-    Mix of patch files and decoys — the model must learn to handle both.
+    80% patch file, 20% decoy — ensures most reads are task-relevant.
+    Decoy selection prefers files in the same directory or imported by patch files.
     """
-    # 40% patch file, 60% decoy — force the model to handle irrelevant files
-    all_files = [(f, True) for f in patch_files] + [(f, False) for f in sibling_files]
-    if not all_files:
+    if not patch_files and not sibling_files:
         return None
 
     if patch_files and sibling_files:
-        if random.random() < 0.4:
+        if random.random() < 0.8:
             target = random.choice(patch_files)
             is_patch_file = True
         else:
-            target = random.choice(sibling_files)
+            # Prefer related decoys: same directory as a patch file
+            patch_dirs = {str(Path(f).parent) for f in patch_files}
+            related = [f for f in sibling_files if str(Path(f).parent) in patch_dirs]
+            pool = related if related else sibling_files
+            target = random.choice(pool)
             is_patch_file = False
     elif patch_files:
         target = random.choice(patch_files)
@@ -182,48 +185,89 @@ def _generate_lint_call(patch_files: list[str]) -> dict:
     return {"tool_type": "lint_output", "command": "ruff check ."}
 
 
-def _generate_curl_call(instance: dict, identifiers: dict[str, list[str]]) -> dict:
+def _generate_curl_url_via_llm(
+    instance: dict,
+    identifiers: dict[str, list[str]],
+    patch_files: list[str],
+    llm_client,
+    llm_model: str,
+) -> str | None:
+    """Ask an LLM what URL a debugging agent would curl for this task.
+
+    Returns a URL string, or None if the LLM call fails.
+    """
+    repo = instance["repo"]
+    problem = instance.get("problem_statement", "")[:600]
+    classes = identifiers.get("classes", [])[:5]
+    functions = identifiers.get("functions", [])[:5]
+
+    prompt = (
+        "You are a coding agent debugging this issue in the "
+        f"{repo} repository.\n\n"
+        f"Issue:\n{problem}\n\n"
+        f"Modified files: {', '.join(patch_files[:5])}\n"
+        f"Key classes: {', '.join(classes)}\n"
+        f"Key functions: {', '.join(functions)}\n\n"
+        "What single URL would you curl to fetch information useful for "
+        "this task? Choose a REAL, publicly accessible URL such as:\n"
+        "- The GitHub API endpoint for this repo's specific issue/PR\n"
+        "- An official documentation page for the API or class involved\n"
+        "- A PyPI/npm package metadata endpoint\n"
+        "- A raw file from the repo on GitHub\n\n"
+        "Return ONLY the URL on one line, nothing else."
+    )
+
+    try:
+        response = llm_client.chat.completions.create(
+            model=llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=256,
+        )
+        text = response.choices[0].message.content.strip()
+        # Extract URL from response (in case model wraps it in backticks etc.)
+        url_match = re.search(r"https?://[^\s\"`'<>]+", text)
+        if url_match:
+            return url_match.group(0).rstrip(".,;)")
+    except Exception as e:
+        logger.debug(f"LLM curl URL generation failed: {e}")
+
+    return None
+
+
+def _github_issue_url(instance: dict) -> str:
+    """Build the GitHub API URL for this instance's issue (reliable fallback)."""
+    repo = instance["repo"]
+    instance_id = instance["instance_id"]
+    parts = instance_id.rsplit("-", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return f"https://api.github.com/repos/{repo}/issues/{parts[1]}"
+    return f"https://api.github.com/repos/{repo}/issues?per_page=5&state=all"
+
+
+def _generate_curl_call(
+    instance: dict,
+    identifiers: dict[str, list[str]],
+    patch_files: list[str],
+    llm_client=None,
+    llm_model: str = "gpt-4o-mini",
+) -> dict:
     """Generate a curl tool call spec.
 
-    Simulates an agent fetching documentation, API responses, or package info
-    related to the issue. Common patterns:
-    - Fetching library docs for a class/function mentioned in the issue
-    - Checking PyPI/npm package metadata
-    - Fetching GitHub issue/PR comments
-    - Fetching API endpoint responses
+    If an LLM client is available, asks it to generate a targeted URL that a
+    debugging agent would actually fetch. Falls back to the GitHub issue API
+    URL (always exists and is directly task-relevant).
     """
-    repo = instance["repo"]  # e.g. "astropy/astropy"
-    org, project = repo.split("/") if "/" in repo else ("org", repo)
+    url = None
 
-    classes = identifiers.get("classes", [])
-    functions = identifiers.get("functions", [])
+    # Primary: LLM-generated targeted URL
+    if llm_client is not None:
+        url = _generate_curl_url_via_llm(instance, identifiers, patch_files, llm_client, llm_model)
 
-    url_templates = [
-        # ReadTheDocs / Sphinx docs
-        (
-            f"https://{project}.readthedocs.io/en/latest/api/{random.choice(classes)}.html"
-            if classes
-            else f"https://{project}.readthedocs.io/en/latest/"
-        ),
-        # GitHub issue/PR
-        f"https://api.github.com/repos/{repo}/issues/{random.randint(1000, 9999)}",
-        # PyPI package info
-        f"https://pypi.org/pypi/{project}/json",
-        # GitHub file content API
-        (
-            f"https://api.github.com/repos/{repo}/contents/{random.choice(functions)}.py"
-            if functions
-            else f"https://api.github.com/repos/{repo}/contents/"
-        ),
-        # Stack Overflow search
-        (
-            f"https://api.stackexchange.com/2.3/search?order=desc&sort=relevance&intitle={random.choice(classes)}&site=stackoverflow"
-            if classes
-            else f"https://api.stackexchange.com/2.3/search?order=desc&sort=relevance&intitle={project}&site=stackoverflow"
-        ),
-    ]
+    # Fallback: GitHub issue API (always task-relevant)
+    if url is None:
+        url = _github_issue_url(instance)
 
-    url = random.choice(url_templates)
     return {
         "tool_type": "curl",
         "command": f"curl -s {url}",
@@ -279,20 +323,88 @@ def _generate_python_call(
     }
 
 
-def _generate_build_call() -> dict:
-    """Generate a build output tool call spec."""
+def _generate_build_call(patch_files: list[str] | None = None) -> dict:
+    """Generate a build output tool call spec.
+
+    Diversifies beyond just 'python setup.py build' to include
+    editable installs, test collection, and import checks.
+    """
+    commands = [
+        "pip install -e . 2>&1",
+        "python -m pytest --collect-only 2>&1",
+        "python setup.py build 2>&1",
+    ]
+
+    # Add import check for the changed module
+    if patch_files:
+        module = patch_files[0].replace("/", ".").replace(".py", "")
+        commands.append(f'python -c "from {module} import *" 2>&1')
+
+    cmd = random.choice(commands)
     return {
         "tool_type": "build_output",
-        "command": "python setup.py build",
+        "command": cmd,
     }
 
 
-def generate_tool_calls_for_instance(instance: dict, available_files: list[str]) -> list[dict]:
+def _generate_pip_install_call() -> dict:
+    """Generate a pip install tool call spec."""
+    return {
+        "tool_type": "pip_install",
+        "command": "pip install -e . 2>&1",
+    }
+
+
+def _generate_type_check_call(patch_files: list[str]) -> dict | None:
+    """Generate a mypy type check tool call spec."""
+    if not patch_files:
+        return None
+    target = random.choice(patch_files)
+    return {
+        "tool_type": "type_check",
+        "command": f"mypy {target} --no-error-summary 2>&1",
+        "target_file": target,
+    }
+
+
+def _generate_coverage_call(instance: dict, patch_files: list[str]) -> dict | None:
+    """Generate a pytest coverage tool call spec."""
+    fail_to_pass = instance.get("FAIL_TO_PASS", "")
+    test_names = []
+    if fail_to_pass:
+        try:
+            test_names = json.loads(fail_to_pass)
+            if isinstance(test_names, str):
+                test_names = [test_names]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not test_names or not patch_files:
+        return None
+
+    test = test_names[0]
+    module = patch_files[0].replace("/", ".").replace(".py", "")
+    return {
+        "tool_type": "coverage",
+        "command": f"python -m pytest {test} --cov={module} --cov-report=term-missing 2>&1",
+        "test_target": test,
+        "cov_module": module,
+    }
+
+
+def generate_tool_calls_for_instance(
+    instance: dict,
+    available_files: list[str],
+    llm_client=None,
+    llm_model: str = "gpt-4o-mini",
+) -> list[dict]:
     """Generate a set of tool call specs for a single SWE-bench instance.
 
     Args:
         instance: SWE-bench instance dict
         available_files: List of file paths available in source cache
+        llm_client: Optional OpenAI-compatible client for LLM-grounded curl URLs
+        llm_model: Model name to use for LLM calls
 
     Returns:
         List of tool call spec dicts
@@ -313,12 +425,17 @@ def generate_tool_calls_for_instance(instance: dict, available_files: list[str])
         "python": lambda: _generate_python_call(instance, identifiers, patch_files),
         "git_log": lambda: _generate_git_log_call(patch_files),
         "test_output": lambda: _generate_test_output_call(instance),
-        "curl": lambda: _generate_curl_call(instance, identifiers),
+        "curl": lambda: _generate_curl_call(
+            instance, identifiers, patch_files, llm_client, llm_model
+        ),
         "git_diff": lambda: _generate_git_diff_call(patch_files),
         "git_blame": lambda: _generate_git_blame_call(patch_files),
         "ls": lambda: _generate_ls_call(patch_files),
         "lint_output": lambda: _generate_lint_call(patch_files),
-        "build_output": lambda: _generate_build_call(),
+        "build_output": lambda: _generate_build_call(patch_files),
+        "pip_install": lambda: _generate_pip_install_call(),
+        "type_check": lambda: _generate_type_check_call(patch_files),
+        "coverage": lambda: _generate_coverage_call(instance, patch_files),
     }
 
     calls = []
@@ -340,6 +457,9 @@ def generate_all_tool_calls(
 ) -> list[dict]:
     """Generate tool call specs for all instances.
 
+    If an OpenAI API key is available in config, creates an LLM client for
+    generating grounded curl URLs. Otherwise falls back to GitHub API URLs.
+
     Args:
         instances: List of SWE-bench instance dicts
         all_sources: Dict mapping instance_id to {file_path: content}
@@ -359,12 +479,34 @@ def generate_all_tool_calls(
                 calls.append(json.loads(line))
         return calls
 
+    # Create LLM client for grounded curl URL generation (optional)
+    llm_client = None
+    llm_model = "gpt-4o-mini"
+    api_key = config.openai_api_key
+    if api_key:
+        try:
+            from openai import OpenAI
+
+            kwargs = {"api_key": api_key}
+            if config.distillation_base_url:
+                kwargs["base_url"] = config.distillation_base_url
+            llm_client = OpenAI(**kwargs)
+            llm_model = config.distillation_model
+            logger.info("LLM client available — curl URLs will be LLM-grounded")
+        except Exception as e:
+            logger.warning(f"Could not create LLM client for curl URLs: {e}")
+    else:
+        logger.info("No API key — curl URLs will use GitHub issue API fallback")
+
     all_calls = []
-    for instance in instances:
+    for i, instance in enumerate(instances):
         instance_id = instance["instance_id"]
         available_files = list(all_sources.get(instance_id, {}).keys())
-        calls = generate_tool_calls_for_instance(instance, available_files)
+        calls = generate_tool_calls_for_instance(instance, available_files, llm_client, llm_model)
         all_calls.extend(calls)
+
+        if (i + 1) % 100 == 0:
+            logger.info(f"[Phase 3] {i + 1}/{len(instances)} instances processed")
 
     # Write to disk
     with open(output_path, "w") as f:

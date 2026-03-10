@@ -7,8 +7,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DEV_RATIO = 0.05
-
 
 def main():
     from datasets import load_dataset
@@ -17,9 +15,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Download squeez training data from HuggingFace")
     parser.add_argument("--force", action="store_true", help="Re-download even if data exists")
+    parser.add_argument("--output-dir", type=Path, default=Path("data"), help="Output directory")
     args = parser.parse_args()
 
-    output_dir = Path("data")
+    output_dir = args.output_dir
     output_dir.mkdir(exist_ok=True)
 
     train_path = output_dir / "train.jsonl"
@@ -33,13 +32,9 @@ def main():
     logger.info("Downloading dataset from HuggingFace...")
     ds = load_dataset("KRLabsOrg/tool-output-extraction-swebench")
 
-    # Split HF train into train + dev (stratified by repo would be ideal,
-    # but a random split is fine since eval repos are already held out)
-    train_split = ds["train"].train_test_split(test_size=DEV_RATIO, seed=42)
-
     splits = [
-        (train_split["train"], train_path, "train"),
-        (train_split["test"], dev_path, "dev"),
+        (ds["train"], train_path, "train"),
+        (ds["dev"], dev_path, "dev"),
         (ds["test"], test_path, "test"),
     ]
 
@@ -49,10 +44,7 @@ def main():
             for sample in data:
                 f.write(json.dumps(sample) + "\n")
 
-    logger.info(
-        f"Done: {len(train_split['train'])} train / "
-        f"{len(train_split['test'])} dev / {len(ds['test'])} test"
-    )
+    logger.info(f"Done: {len(ds['train'])} train / {len(ds['dev'])} dev / {len(ds['test'])} test")
 
 
 if __name__ == "__main__":

@@ -130,8 +130,19 @@ class SqueezEncoderForLineClassification(PreTrainedModel):
 
         loss = None
         if labels is not None:
-            loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fn(logits.view(-1, self.config.num_labels), labels.view(-1))
+            flat_labels = labels.view(-1)
+            valid = flat_labels != -100
+            n_pos = (flat_labels[valid] == 1).sum().float()
+            n_neg = (flat_labels[valid] == 0).sum().float()
+            if n_pos > 0 and n_neg > 0:
+                weight = torch.tensor(
+                    [1.0, (n_neg / n_pos).clamp(max=10.0)],
+                    device=logits.device,
+                )
+            else:
+                weight = None
+            loss_fn = nn.CrossEntropyLoss(ignore_index=-100, weight=weight)
+            loss = loss_fn(logits.view(-1, self.config.num_labels), flat_labels)
 
         return TokenClassifierOutput(
             loss=loss,

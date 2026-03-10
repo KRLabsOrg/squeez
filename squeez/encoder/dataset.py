@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from pathlib import Path
 
 import torch
@@ -89,6 +90,8 @@ class LineClassificationDataset(Dataset):
         data_path: str | Path,
         tokenizer: PreTrainedTokenizer,
         max_length: int = 8192,
+        max_negative_ratio: float | None = None,
+        seed: int = 42,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -156,10 +159,37 @@ class LineClassificationDataset(Dataset):
             if len(windows) > 1:
                 n_expanded += len(windows) - 1
 
+        # Optional: downsample all-negative windows to cap the empty fraction
+        n_downsampled = 0
+        if max_negative_ratio is not None and 0 < max_negative_ratio < 1:
+            positive_windows = []
+            negative_windows = []
+            for w in self._windows:
+                _, _, labels = w
+                if any(labels):
+                    positive_windows.append(w)
+                else:
+                    negative_windows.append(w)
+
+            n_positive = len(positive_windows)
+            # max_negative_ratio = neg / (pos + neg) → neg = pos * ratio / (1 - ratio)
+            max_neg = int(n_positive * max_negative_ratio / (1 - max_negative_ratio))
+            if len(negative_windows) > max_neg:
+                rng = random.Random(seed)
+                rng.shuffle(negative_windows)
+                n_downsampled = len(negative_windows) - max_neg
+                negative_windows = negative_windows[:max_neg]
+
+            self._windows = positive_windows + negative_windows
+            # Shuffle to interleave positive/negative
+            rng = random.Random(seed)
+            rng.shuffle(self._windows)
+
         logger.info(
             f"Loaded {len(raw_samples)} samples from {data_path} → "
             f"{len(self._windows)} windows "
             f"({n_expanded} extra from sliding, {n_skipped_empty} empty windows skipped, "
+            f"{n_downsampled} negative windows downsampled, "
             f"max_length={max_length})"
         )
 

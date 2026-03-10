@@ -189,7 +189,7 @@ filtered = extractor.extract(
 print(filtered)  # Only the relevant lines
 ```
 
-Both model types use the same `extract()` API. The generative model returns JSON (`{"relevant_lines": [...]}`), the encoder classifies each line directly. Both return filtered text.
+Both model types use the same `extract()` API. The generative model returns relevant lines in XML tags, the encoder classifies each line directly. Both return filtered text.
 
 ### Configuration
 
@@ -247,7 +247,7 @@ Also works with other coding agents (Codex CLI, OpenCode, etc.) via their equiva
 python scripts/download_data.py
 ```
 
-This pulls the [SWE-bench tool output dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) (7,148 train + 436 eval samples) from HuggingFace.
+This pulls the [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) (8,241 train + 252 dev + 557 test) from HuggingFace.
 
 ### 2a. Train generative model (Qwen + LoRA)
 
@@ -262,8 +262,8 @@ Default: Qwen 3.5 2B with LoRA (r=16, alpha=32). See `configs/default.yaml` for 
 ### 2b. Train encoder model (mmBERT)
 
 ```bash
-# Prepare encoder-format data from the ChatML training data
-python scripts/prepare_encoder_data.py
+# Prepare encoder-format data from the downloaded splits
+python scripts/prepare_encoder_data.py --data-dir data
 
 # Train the encoder
 python -m squeez.encoder.train \
@@ -295,51 +295,42 @@ Both produce the same metrics format (span F1, ROUGE-L, compression ratio) for d
 
 Training data: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-| | Count |
-|---|---|
-| Train samples | 7,148 |
-| Eval samples | 436 |
-| With relevant lines | 3,985 (53%) |
-| Empty (not relevant) | 3,599 (47%) |
-| Avg compression | 86% |
+| | Train | Dev | Test | Total |
+|---|---:|---:|---:|---:|
+| Samples | 8,241 | 252 | 557 | 9,050 |
 
-Built from 2,294 [SWE-bench](https://huggingface.co/datasets/princeton-nlp/SWE-bench) instances with real tool execution (git grep, git blame, pytest, ruff, etc.) against 12 repos. Teacher distillation by gpt-oss-120b on Groq.
+Three data sources covering 30 tool types across multiple ecosystems:
 
-### Tool types
+- **SWE-bench real data** (5,936) — Real tool output from `git grep`, `pytest`, `pip install`, `mypy`, etc. executed on 2,294 cloned Python repos. Labeled by teacher LLM distillation with grounded line spans.
+- **Synthetic multi-ecosystem** (2,039) — LLM-generated tool output for npm, TypeScript, Rust, Go, Java, Docker, Terraform, kubectl, and more.
+- **Synthetic SWE-style** (1,075) — LLM-generated versions of Python tool types that had high noise rates in the real data.
 
-| Tool Type | Count |
-|---|---|
-| read_file | 4,309 |
-| git_log | 840 |
-| grep | 575 |
-| build_output | 380 |
-| ls | 376 |
-| test_output | 344 |
-| python | 310 |
-| git_blame | 201 |
-| lint_output | 101 |
-| curl | 95 |
-| git_diff | 53 |
-
-## How It Works
-
-1. **Source**: SWE-bench test split (2,294 real GitHub issues)
-2. **Tool calls**: 3-7 synthetic tool calls per instance
-3. **Real execution**: All commands run against bare-cloned repos at the correct commit
-4. **Teacher distillation**: gpt-oss-120b selects relevant line ranges via JSON spans
-5. **Zero-hallucination extraction**: Teacher spans matched against original output — no generated text
-6. **Assembly**: Extracted lines formatted as `{"relevant_lines": [...]}` for SFT training
+Test set is manually curated. See the [dataset card](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) for full details on generation, filtering, and curation.
 
 ## Data Generation
 
 To regenerate the dataset from scratch:
 
 ```bash
-squeez pipeline --phase 1 2 3 4 5 6 7 8 \
-    --output-dir data \
-    --github-token $GITHUB_TOKEN \
-    --teacher-api-key $GROQ_API_KEY \
-    --teacher-base-url https://api.groq.com/openai/v1
+# SWE-bench pipeline (requires cloned repos)
+python squeez/data/pipeline.py --phase 3 4 5 6 7 \
+    --output-dir data/v2 \
+    --teacher-base-url http://localhost:8000/v1 \
+    --teacher-model openai/gpt-oss-120b
+
+# Filter empty samples
+python scripts/filter_distilled.py data/v2/distilled_outputs.jsonl \
+    --output data/v2/distilled_filtered.jsonl
+
+# Synthetic multi-ecosystem
+python scripts/generate_synthetic_data.py \
+    --output data/v2/synthetic_train.jsonl \
+    --base-url http://localhost:8000/v1 \
+    --model openai/gpt-oss-120b
+
+# Merge and assemble
+cat data/v2/distilled_filtered.jsonl data/v2/synthetic_train.jsonl data/v2/synthetic_swe_style.jsonl > data/v2/distilled_outputs.jsonl
+python squeez/data/pipeline.py --phase 7 --output-dir data/v2
 ```
 
 ## Citation

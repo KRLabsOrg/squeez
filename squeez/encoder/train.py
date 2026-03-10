@@ -39,6 +39,7 @@ def train(
     bf16: bool = False,
     eval_batch_size: int | None = None,
     eval_accumulation_steps: int = 1,
+    max_negative_ratio: float | None = None,
 ) -> None:
     """Train the encoder line classifier."""
     import torch
@@ -88,7 +89,9 @@ def train(
 
     # Load datasets
     logger.info(f"Loading train data from {train_file}")
-    train_dataset = LineClassificationDataset(train_file, tokenizer, max_length)
+    train_dataset = LineClassificationDataset(
+        train_file, tokenizer, max_length, max_negative_ratio=max_negative_ratio
+    )
     eval_dataset = None
     if eval_file:
         logger.info(f"Loading eval data from {eval_file}")
@@ -178,6 +181,12 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--logging-steps", type=int, default=25)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument(
+        "--max-negative-ratio",
+        type=float,
+        default=None,
+        help="Cap fraction of all-negative windows in training data (e.g. 0.40)",
+    )
     return parser
 
 
@@ -220,6 +229,11 @@ def main(argv: list[str] | None = None) -> int:
         eval_batch_size=args.eval_batch_size or config.get("encoder_eval_batch_size", 1),
         eval_accumulation_steps=(
             args.eval_accumulation_steps or config.get("encoder_eval_accumulation_steps", 1)
+        ),
+        max_negative_ratio=(
+            args.max_negative_ratio
+            if args.max_negative_ratio is not None
+            else config.get("encoder_max_negative_ratio")
         ),
     )
     return 0

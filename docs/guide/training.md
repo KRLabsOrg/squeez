@@ -13,7 +13,7 @@ Both use the same dataset and produce comparable metrics for direct comparison.
 python scripts/download_data.py
 ```
 
-This pulls the [SWE-bench tool output dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) into `data/train.jsonl` (6,790 samples), `data/dev.jsonl` (358 samples), and `data/test.jsonl` (436 samples).
+This pulls the [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) into `data/train.jsonl` (8,241 samples), `data/dev.jsonl` (252 samples), and `data/test.jsonl` (557 samples).
 
 ## 2. Generative model (Qwen + LoRA)
 

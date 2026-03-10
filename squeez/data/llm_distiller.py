@@ -288,6 +288,11 @@ async def distill_batch_async(
             instance = instance_map.get(sample["instance_id"])
             if not instance:
                 continue
+            # Store task text so downstream consumers don't need instance lookup
+            issue_text = instance.get("problem_statement", "")
+            if len(issue_text) > 3000:
+                issue_text = issue_text[:3000] + "..."
+            sample["task"] = issue_text
             tasks.append(
                 _distill_single(
                     client,
