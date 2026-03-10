@@ -104,6 +104,74 @@ def compute_partial_overlap(predicted: list[str], reference: list[str]) -> float
     return round(matched_chars / total_chars, 4) if total_chars > 0 else 0.0
 
 
+def _line_overlap_score(pred_line: str, ref_line: str) -> float:
+    """Compute a symmetric overlap score for two lines."""
+    if not pred_line or not ref_line:
+        return 0.0
+    if pred_line == ref_line:
+        return 1.0
+    if pred_line in ref_line or ref_line in pred_line:
+        return min(len(pred_line), len(ref_line)) / max(len(pred_line), len(ref_line))
+
+    pred_bigrams = (
+        {pred_line[i : i + 2] for i in range(len(pred_line) - 1)}
+        if len(pred_line) > 1
+        else {pred_line}
+    )
+    ref_bigrams = (
+        {ref_line[i : i + 2] for i in range(len(ref_line) - 1)} if len(ref_line) > 1 else {ref_line}
+    )
+    if not pred_bigrams or not ref_bigrams:
+        return 0.0
+
+    overlap = len(pred_bigrams & ref_bigrams)
+    precision = overlap / len(pred_bigrams)
+    recall = overlap / len(ref_bigrams)
+    if precision + recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+
+def compute_fuzzy_span_metrics(
+    predicted: list[str],
+    reference: list[str],
+    threshold: float = 0.5,
+) -> dict[str, float]:
+    """Compute one-to-one fuzzy line overlap metrics at a fixed threshold."""
+    if not reference and not predicted:
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0}
+    if not reference or not predicted:
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+    candidate_pairs: list[tuple[float, int, int]] = []
+    for pred_idx, pred_line in enumerate(predicted):
+        for ref_idx, ref_line in enumerate(reference):
+            score = _line_overlap_score(pred_line, ref_line)
+            if score >= threshold:
+                candidate_pairs.append((score, pred_idx, ref_idx))
+
+    matched_pred: set[int] = set()
+    matched_ref: set[int] = set()
+    tp = 0
+
+    for score, pred_idx, ref_idx in sorted(candidate_pairs, reverse=True):
+        del score
+        if pred_idx in matched_pred or ref_idx in matched_ref:
+            continue
+        matched_pred.add(pred_idx)
+        matched_ref.add(ref_idx)
+        tp += 1
+
+    precision = tp / len(predicted) if predicted else 0.0
+    recall = tp / len(reference) if reference else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    return {
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+    }
+
+
 def compute_empty_accuracy(predicted: list[str], reference: list[str]) -> dict[str, float | str]:
     """Check if model correctly predicts empty vs non-empty.
 
@@ -226,6 +294,9 @@ def evaluate_model(
         "span_recall": [],
         "span_f1": [],
         "exact_match": [],
+        "fuzzy_span_precision": [],
+        "fuzzy_span_recall": [],
+        "fuzzy_span_f1": [],
         "partial_overlap": [],
         "empty_accuracy": [],
         "rouge_l": [],
@@ -257,30 +328,24 @@ def evaluate_model(
 
         # Span metrics
         span = compute_span_metrics(pred_lines, ref_lines)
-        all_metrics["span_precision"].append(span["precision"])
-        all_metrics["span_recall"].append(span["recall"])
-        all_metrics["span_f1"].append(span["f1"])
-        all_metrics["exact_match"].append(span["exact_match"])
+        fuzzy = compute_fuzzy_span_metrics(pred_lines, ref_lines, threshold=0.5)
 
         # Partial overlap
         partial = compute_partial_overlap(pred_lines, ref_lines)
-        all_metrics["partial_overlap"].append(partial)
 
         # Empty accuracy
         empty = compute_empty_accuracy(pred_lines, ref_lines)
-        all_metrics["empty_accuracy"].append(empty["correct"])
-        empty_confusion[empty["category"]] += 1
 
         # ROUGE-L on concatenated text
         pred_text = "\n".join(pred_lines)
         ref_text = "\n".join(ref_lines)
         rouge = compute_rouge_l(pred_text, ref_text)
-        all_metrics["rouge_l"].append(rouge)
 
         # Compression
         compression = compute_compression_ratio(tool_output, pred_text)
         return {
             "span": span,
+            "fuzzy": fuzzy,
             "partial": partial,
             "empty": empty,
             "rouge": rouge,
@@ -289,6 +354,7 @@ def evaluate_model(
 
     def record_result(result: dict) -> None:
         span = result["span"]
+        fuzzy = result["fuzzy"]
         partial = result["partial"]
         empty = result["empty"]
         rouge = result["rouge"]
@@ -298,6 +364,9 @@ def evaluate_model(
         all_metrics["span_recall"].append(span["recall"])
         all_metrics["span_f1"].append(span["f1"])
         all_metrics["exact_match"].append(span["exact_match"])
+        all_metrics["fuzzy_span_precision"].append(fuzzy["precision"])
+        all_metrics["fuzzy_span_recall"].append(fuzzy["recall"])
+        all_metrics["fuzzy_span_f1"].append(fuzzy["f1"])
         all_metrics["partial_overlap"].append(partial)
         all_metrics["empty_accuracy"].append(empty["correct"])
         empty_confusion[empty["category"]] += 1

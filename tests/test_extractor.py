@@ -191,6 +191,23 @@ class TestEvaluate:
         metrics = compute_span_metrics([], [])
         assert metrics["exact_match"] == 1.0
 
+    def test_fuzzy_span_metrics(self):
+        from squeez.training.evaluate import compute_fuzzy_span_metrics
+
+        metrics = compute_fuzzy_span_metrics(
+            ["ERROR: foo failed at line 12"],
+            ["foo failed at line 12"],
+            threshold=0.5,
+        )
+        assert metrics["precision"] == 1.0
+        assert metrics["recall"] == 1.0
+        assert metrics["f1"] == 1.0
+
+        metrics = compute_fuzzy_span_metrics(
+            ["completely different"], ["foo failed"], threshold=0.5
+        )
+        assert metrics["f1"] == 0.0
+
     def test_empty_accuracy(self):
         from squeez.training.evaluate import compute_empty_accuracy
 
