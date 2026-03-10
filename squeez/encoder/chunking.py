@@ -8,11 +8,16 @@ Inference aggregates chunk scores back to the original line index.
 
 from __future__ import annotations
 
-from transformers import PreTrainedTokenizer
+from typing import Protocol
+
+
+class _TokenizerLike(Protocol):
+    def __call__(self, text: str, **kwargs) -> dict:
+        ...
 
 
 def encode_text(
-    tokenizer: PreTrainedTokenizer,
+    tokenizer: _TokenizerLike,
     text: str,
     truncation: bool = False,
     max_length: int | None = None,
@@ -32,7 +37,7 @@ def encode_text(
 
 
 def chunk_output_lines(
-    tokenizer: PreTrainedTokenizer,
+    tokenizer: _TokenizerLike,
     output_lines: list[str],
     max_tokens_per_chunk: int,
 ) -> tuple[list[list[int]], list[int]]:

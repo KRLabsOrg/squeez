@@ -20,20 +20,19 @@ def test_format_prompt_truncates_long_task():
     prompt = _format_prompt(long_task, "output")
     assert len(long_task) > 3000
     assert "..." in prompt
-    # Should be truncated to 3000 + "..."
-    task_section = prompt.split("Task: ")[1].split("\n\n")[0]
+    task_section = prompt.split("<task>\n", 1)[1].split("\n</task>", 1)[0]
     assert len(task_section) == 3003  # 3000 + "..."
 
 
 def test_format_prompt_empty_task():
     prompt = _format_prompt("", "some output")
-    assert "Task: \n" in prompt
+    assert "<task>\n\n</task>" in prompt
     assert "some output" in prompt
 
 
-def test_system_prompt_has_json_format():
+def test_system_prompt_has_relevant_lines_format():
     assert "relevant_lines" in SYSTEM_PROMPT
-    assert "JSON" in SYSTEM_PROMPT
+    assert "<relevant_lines>" in SYSTEM_PROMPT
 
 
 def test_load_config_returns_dict():
@@ -53,8 +52,9 @@ class TestSampleAssembler:
         from squeez.data.sample_assembler import _assign_split
 
         assert _assign_split("django__django") == "train"
-        assert _assign_split("pydata__xarray") == "eval"
-        assert _assign_split("pallets__flask") == "eval"
+        assert _assign_split("pydata__xarray") == "test"
+        assert _assign_split("pallets__flask") == "test"
+        assert _assign_split("psf__requests") == "dev"
         assert _assign_split("scikit-learn__scikit-learn") == "train"
 
     def test_format_prompt(self):
