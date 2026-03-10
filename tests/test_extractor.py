@@ -40,6 +40,30 @@ def test_load_config_returns_dict():
     assert isinstance(config, dict)
 
 
+def test_extract_many_preserves_input_order_for_remote_backend():
+    from squeez.inference.extractor import ToolOutputExtractor
+
+    extractor = ToolOutputExtractor.__new__(ToolOutputExtractor)
+    extractor._backend = "vllm"
+
+    calls = []
+
+    def fake_extract(task, tool_output, max_new_tokens=1024, temperature=0.1):
+        del max_new_tokens, temperature
+        calls.append((task, tool_output))
+        return f"{task}:{tool_output}"
+
+    extractor.extract = fake_extract
+
+    results = extractor.extract_many(
+        [("t1", "o1"), ("t2", "o2"), ("t3", "o3")],
+        concurrency=3,
+    )
+
+    assert sorted(calls) == [("t1", "o1"), ("t2", "o2"), ("t3", "o3")]
+    assert results == ["t1:o1", "t2:o2", "t3:o3"]
+
+
 class TestSampleAssembler:
     def test_get_repo_from_instance_id(self):
         from squeez.data.sample_assembler import _get_repo_from_instance_id

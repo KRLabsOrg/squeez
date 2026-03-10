@@ -9,6 +9,7 @@ Metrics:
 """
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import re
@@ -178,6 +179,7 @@ def evaluate_model(
     server_url: str | None = None,
     server_model: str | None = None,
     temperature: float = 0.1,
+    request_concurrency: int = 1,
 ) -> dict:
     """Evaluate the model on the eval set.
 
@@ -189,6 +191,7 @@ def evaluate_model(
         server_url: OpenAI-compatible server URL, if evaluating remotely
         server_model: Remote model ID for the server backend
         temperature: Generation temperature
+        request_concurrency: Number of concurrent remote requests for server evaluation
 
     Returns:
         Dict with aggregate metrics
@@ -236,7 +239,7 @@ def evaluate_model(
         "false_negative": 0,
     }
 
-    for i, sample in enumerate(samples):
+    def evaluate_sample(sample: dict) -> dict:
         prompt = sample["prompt"]
         reference_raw = sample["response"]
         task, tool_output = _parse_prompt_sections(prompt)
@@ -276,14 +279,58 @@ def evaluate_model(
 
         # Compression
         compression = compute_compression_ratio(tool_output, pred_text)
+        return {
+            "span": span,
+            "partial": partial,
+            "empty": empty,
+            "rouge": rouge,
+            "compression": compression,
+        }
+
+    def record_result(result: dict) -> None:
+        span = result["span"]
+        partial = result["partial"]
+        empty = result["empty"]
+        rouge = result["rouge"]
+        compression = result["compression"]
+
+        all_metrics["span_precision"].append(span["precision"])
+        all_metrics["span_recall"].append(span["recall"])
+        all_metrics["span_f1"].append(span["f1"])
+        all_metrics["exact_match"].append(span["exact_match"])
+        all_metrics["partial_overlap"].append(partial)
+        all_metrics["empty_accuracy"].append(empty["correct"])
+        empty_confusion[empty["category"]] += 1
+        all_metrics["rouge_l"].append(rouge)
         all_metrics["compression"].append(compression)
 
-        if (i + 1) % 10 == 0:
-            logger.info(
-                f"  [{i + 1}/{len(samples)}] "
-                f"F1={span['f1']:.3f} EM={span['exact_match']:.0f} "
-                f"ROUGE-L={rouge:.3f}"
-            )
+    use_concurrency = bool(server_url) and request_concurrency > 1
+
+    if use_concurrency:
+        logger.info(f"Using request concurrency={request_concurrency} for remote evaluation")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=request_concurrency) as pool:
+            futures = [pool.submit(evaluate_sample, sample) for sample in samples]
+            for i, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+                record_result(future.result())
+
+                if i % 10 == 0:
+                    logger.info(
+                        f"  [{i}/{len(samples)}] "
+                        f"F1={all_metrics['span_f1'][-1]:.3f} "
+                        f"EM={all_metrics['exact_match'][-1]:.0f} "
+                        f"ROUGE-L={all_metrics['rouge_l'][-1]:.3f}"
+                    )
+    else:
+        for i, sample in enumerate(samples):
+            result = evaluate_sample(sample)
+            record_result(result)
+
+            if (i + 1) % 10 == 0:
+                logger.info(
+                    f"  [{i + 1}/{len(samples)}] "
+                    f"F1={result['span']['f1']:.3f} EM={result['span']['exact_match']:.0f} "
+                    f"ROUGE-L={result['rouge']:.3f}"
+                )
 
     # Aggregate
     results = {}
@@ -339,6 +386,12 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.1)
+    parser.add_argument(
+        "--request-concurrency",
+        type=int,
+        default=1,
+        help="Concurrent requests for remote server evaluation",
+    )
     return parser
 
 
@@ -359,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
         args.server_url,
         args.server_model,
         args.temperature,
+        args.request_concurrency,
     )
 
     # Save results

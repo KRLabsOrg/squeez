@@ -7,6 +7,7 @@ Three backends:
 """
 
 import argparse
+import concurrent.futures
 import logging
 import os
 import sys
@@ -274,6 +275,51 @@ class ToolOutputExtractor:
         if m:
             return m.group(1).strip()
         return raw
+
+    def extract_many(
+        self,
+        items: list[tuple[str, str]],
+        max_new_tokens: int = 1024,
+        temperature: float = 0.1,
+        concurrency: int = 1,
+    ) -> list[str]:
+        """Extract relevant lines for many (task, tool_output) pairs.
+
+        Remote backends can use concurrent requests for higher throughput.
+        Local backends fall back to sequential execution.
+        """
+        if self._backend != "vllm" or concurrency <= 1:
+            return [
+                self.extract(
+                    task=task,
+                    tool_output=tool_output,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                )
+                for task, tool_output in items
+            ]
+
+        results: list[str | None] = [None] * len(items)
+
+        def _run(index: int, item: tuple[str, str]) -> tuple[int, str]:
+            task, tool_output = item
+            return (
+                index,
+                self.extract(
+                    task=task,
+                    tool_output=tool_output,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                ),
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = [pool.submit(_run, i, item) for i, item in enumerate(items)]
+            for future in concurrent.futures.as_completed(futures):
+                index, result = future.result()
+                results[index] = result
+
+        return [result if result is not None else "" for result in results]
 
     def _extract_encoder(self, task: str, tool_output: str) -> str:
         """Extract using encoder-based line classifier."""
