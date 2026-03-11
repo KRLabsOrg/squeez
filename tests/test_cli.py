@@ -61,6 +61,9 @@ def test_eval_parser_accepts_clear_and_legacy_model_flags():
     args = parser.parse_args(["--eval-file", "eval.jsonl", "--request-concurrency", "8"])
     assert args.request_concurrency == 8
 
+    args = parser.parse_args(["--eval-file", "eval.jsonl", "--examples-output", "examples.json"])
+    assert args.examples_output == "examples.json"
+
 
 def test_pipeline_parser_accepts_teacher_aliases():
     parser = build_pipeline_parser()

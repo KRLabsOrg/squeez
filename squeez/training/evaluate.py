@@ -248,6 +248,7 @@ def evaluate_model(
     server_model: str | None = None,
     temperature: float = 0.1,
     request_concurrency: int = 1,
+    examples_output: str | None = None,
 ) -> dict:
     """Evaluate the model on the eval set.
 
@@ -260,6 +261,7 @@ def evaluate_model(
         server_model: Remote model ID for the server backend
         temperature: Generation temperature
         request_concurrency: Number of concurrent remote requests for server evaluation
+        examples_output: Optional path to save per-sample predictions/metrics
 
     Returns:
         Dict with aggregate metrics
@@ -309,18 +311,29 @@ def evaluate_model(
         "false_positive": 0,
         "false_negative": 0,
     }
+    examples: list[dict] = []
+    num_errors = 0
 
     def evaluate_sample(sample: dict) -> dict:
         prompt = sample["prompt"]
         reference_raw = sample["response"]
         task, tool_output = _parse_prompt_sections(prompt)
-
-        generated_raw = extractor.extract(
-            task=task,
-            tool_output=tool_output,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-        )
+        try:
+            generated_raw = extractor.extract(
+                task=task,
+                tool_output=tool_output,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+            )
+        except Exception as exc:  # pragma: no cover - remote backends are integration-level
+            return {
+                "prompt": prompt,
+                "task": task,
+                "tool_output": tool_output,
+                "pred_lines": [],
+                "ref_lines": _parse_relevant_lines(reference_raw),
+                "error": f"{exc.__class__.__name__}: {exc}",
+            }
 
         # Parse both into line lists
         pred_lines = _parse_relevant_lines(generated_raw)
@@ -344,6 +357,11 @@ def evaluate_model(
         # Compression
         compression = compute_compression_ratio(tool_output, pred_text)
         return {
+            "prompt": prompt,
+            "task": task,
+            "tool_output": tool_output,
+            "pred_lines": pred_lines,
+            "ref_lines": ref_lines,
             "span": span,
             "fuzzy": fuzzy,
             "partial": partial,
@@ -353,6 +371,22 @@ def evaluate_model(
         }
 
     def record_result(result: dict) -> None:
+        nonlocal num_errors
+        if "error" in result:
+            num_errors += 1
+            examples.append(
+                {
+                    "prompt": result["prompt"],
+                    "task": result["task"],
+                    "tool_output": result["tool_output"],
+                    "predicted_lines": result["pred_lines"],
+                    "reference_lines": result["ref_lines"],
+                    "error": result["error"],
+                }
+            )
+            logger.warning("Sample evaluation failed: %s", result["error"])
+            return
+
         span = result["span"]
         fuzzy = result["fuzzy"]
         partial = result["partial"]
@@ -372,6 +406,29 @@ def evaluate_model(
         empty_confusion[empty["category"]] += 1
         all_metrics["rouge_l"].append(rouge)
         all_metrics["compression"].append(compression)
+        examples.append(
+            {
+                "prompt": result["prompt"],
+                "task": result["task"],
+                "tool_output": result["tool_output"],
+                "predicted_lines": result["pred_lines"],
+                "reference_lines": result["ref_lines"],
+                "metrics": {
+                    "span_precision": span["precision"],
+                    "span_recall": span["recall"],
+                    "span_f1": span["f1"],
+                    "exact_match": span["exact_match"],
+                    "fuzzy_span_precision": fuzzy["precision"],
+                    "fuzzy_span_recall": fuzzy["recall"],
+                    "fuzzy_span_f1": fuzzy["f1"],
+                    "partial_overlap": partial,
+                    "empty_accuracy": empty["correct"],
+                    "empty_category": empty["category"],
+                    "rouge_l": rouge,
+                    "compression": compression,
+                },
+            }
+        )
 
     use_concurrency = bool(server_url) and request_concurrency > 1
 
@@ -413,6 +470,12 @@ def evaluate_model(
 
     results["empty_confusion"] = empty_confusion
     results["num_samples"] = len(samples)
+    results["num_errors"] = num_errors
+
+    if examples_output:
+        with open(examples_output, "w") as f:
+            json.dump(examples, f, indent=2)
+        logger.info(f"Saved per-sample examples to {examples_output}")
 
     logger.info("=" * 60)
     logger.info("EVALUATION RESULTS")
@@ -461,6 +524,11 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
         default=1,
         help="Concurrent requests for remote server evaluation",
     )
+    parser.add_argument(
+        "--examples-output",
+        default=None,
+        help="Optional JSON file for per-sample predictions and metrics",
+    )
     return parser
 
 
@@ -482,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         args.server_model,
         args.temperature,
         args.request_concurrency,
+        args.examples_output,
     )
 
     # Save results
