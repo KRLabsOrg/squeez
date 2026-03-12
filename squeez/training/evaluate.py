@@ -15,6 +15,9 @@ import logging
 import re
 import statistics
 
+from squeez.data.canonical import extract_relevant_lines
+from squeez.data.config import SYSTEM_PROMPT
+
 logger = logging.getLogger(__name__)
 
 
@@ -230,13 +233,30 @@ def compute_compression_ratio(original: str, filtered: str) -> float:
     return round(1.0 - filt_lines / orig_lines, 4)
 
 
-def _parse_prompt_sections(prompt: str) -> tuple[str, str]:
-    """Extract task and tool output from the ChatML prompt."""
-    task_match = re.search(r"<task>\n(.*?)\n</task>", prompt, re.DOTALL)
+def _parse_prompt_sections(prompt: str) -> tuple[str, str, str]:
+    """Extract query/task, background task, and tool output from the ChatML prompt."""
+    task_match = re.search(r"<query>\n(.*?)\n</query>", prompt, re.DOTALL)
+    if not task_match:
+        task_match = re.search(r"<task>\n(.*?)\n</task>", prompt, re.DOTALL)
+    background_match = re.search(r"<background_task>\n(.*?)\n</background_task>", prompt, re.DOTALL)
     output_match = re.search(r"<tool_output>\n(.*?)\n</tool_output>", prompt, re.DOTALL)
     task = task_match.group(1) if task_match else ""
+    background_task = background_match.group(1) if background_match else ""
     tool_output = output_match.group(1) if output_match else ""
-    return task, tool_output
+    return task, background_task, tool_output
+
+
+def _build_prompt(query: str, tool_output: str, background_task: str = "") -> str:
+    background_block = (
+        f"<background_task>\n{background_task}\n</background_task>\n" if background_task else ""
+    )
+    return (
+        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
+        f"<|im_start|>user\n<query>\n{query}\n</query>\n"
+        f"{background_block}"
+        f"<tool_output>\n{tool_output}\n</tool_output><|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
 
 
 def evaluate_model(
@@ -315,9 +335,18 @@ def evaluate_model(
     num_errors = 0
 
     def evaluate_sample(sample: dict) -> dict:
-        prompt = sample["prompt"]
-        reference_raw = sample["response"]
-        task, tool_output = _parse_prompt_sections(prompt)
+        if "prompt" in sample and "response" in sample:
+            prompt = sample["prompt"]
+            reference_raw = sample["response"]
+            task, background_task, tool_output = _parse_prompt_sections(prompt)
+            ref_lines = _parse_relevant_lines(reference_raw)
+        else:
+            task = sample["query"]
+            background_task = sample.get("background_task", "")
+            tool_output = sample["tool_output"]
+            prompt = _build_prompt(task, tool_output, background_task)
+            ref_lines = extract_relevant_lines(tool_output, sample.get("gold_spans", []))
+            reference_raw = "<relevant_lines>\n" + "\n".join(ref_lines) + "\n</relevant_lines>"
         try:
             generated_raw = extractor.extract(
                 task=task,
@@ -329,15 +358,15 @@ def evaluate_model(
             return {
                 "prompt": prompt,
                 "task": task,
+                "background_task": background_task,
                 "tool_output": tool_output,
                 "pred_lines": [],
-                "ref_lines": _parse_relevant_lines(reference_raw),
+                "ref_lines": ref_lines,
                 "error": f"{exc.__class__.__name__}: {exc}",
             }
 
         # Parse both into line lists
         pred_lines = _parse_relevant_lines(generated_raw)
-        ref_lines = _parse_relevant_lines(reference_raw)
 
         # Span metrics
         span = compute_span_metrics(pred_lines, ref_lines)
@@ -359,6 +388,7 @@ def evaluate_model(
         return {
             "prompt": prompt,
             "task": task,
+            "background_task": background_task,
             "tool_output": tool_output,
             "pred_lines": pred_lines,
             "ref_lines": ref_lines,
@@ -378,6 +408,7 @@ def evaluate_model(
                 {
                     "prompt": result["prompt"],
                     "task": result["task"],
+                    "background_task": result.get("background_task", ""),
                     "tool_output": result["tool_output"],
                     "predicted_lines": result["pred_lines"],
                     "reference_lines": result["ref_lines"],
@@ -410,6 +441,7 @@ def evaluate_model(
             {
                 "prompt": result["prompt"],
                 "task": result["task"],
+                "background_task": result.get("background_task", ""),
                 "tool_output": result["tool_output"],
                 "predicted_lines": result["pred_lines"],
                 "reference_lines": result["ref_lines"],

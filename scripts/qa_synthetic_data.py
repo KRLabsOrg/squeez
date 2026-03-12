@@ -1,10 +1,11 @@
-"""QA script for synthetic encoder-format data.
+"""QA script for synthetic canonical-format data.
 
-Validates synthetic JSONL samples: checks relevant_lines exist in tool_output,
-no duplicates, correct order, and optionally runs LLM-assisted review.
+Validates synthetic JSONL samples: checks canonical spans are valid, extracted
+lines exist in tool_output, no duplicates, correct order, and optionally runs
+LLM-assisted review.
 
-Adapted from scripts/qa_dataset.py for encoder-format data
-({task, tool_output, relevant_lines, tool_type}).
+Adapted from scripts/qa_dataset.py for canonical v3 data
+({query, tool_output, gold_spans, tool_type}).
 
 Usage:
     # Automated checks only
@@ -25,6 +26,8 @@ import logging
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from squeez.data.canonical import extract_relevant_lines, normalize_spans
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +89,9 @@ def audit_sample(sample: dict, idx: int) -> dict:
 
     Returns a QA info dict with issues found.
     """
-    task = sample.get("task", "")
+    task = sample.get("query", "")
     tool_output = sample.get("tool_output", "")
-    relevant_lines = sample.get("relevant_lines", [])
+    spans = sample.get("gold_spans", [])
     tool_type = sample.get("tool_type", "unknown")
 
     issues = []
@@ -98,8 +101,8 @@ def audit_sample(sample: dict, idx: int) -> dict:
         issues.append("task_too_short")
     if not tool_output or len(tool_output) < 20:
         issues.append("tool_output_too_short")
-    if not isinstance(relevant_lines, list):
-        issues.append("relevant_lines_not_list")
+    if not isinstance(spans, list):
+        issues.append("gold_spans_not_list")
         return {
             "idx": idx,
             "tool_type": tool_type,
@@ -107,10 +110,11 @@ def audit_sample(sample: dict, idx: int) -> dict:
             "issues": issues,
         }
 
-    # Check for non-string entries
-    non_strings = [i for i, ln in enumerate(relevant_lines) if not isinstance(ln, str)]
-    if non_strings:
-        issues.append(f"relevant_lines_not_all_strings (indices: {non_strings})")
+    normalized_spans = normalize_spans(spans, len(tool_output.split("\n")))
+    if normalized_spans != spans and spans:
+        issues.append("gold_spans_not_normalized")
+
+    relevant_lines = extract_relevant_lines(tool_output, spans)
 
     # Check lines appear in output
     all_found, missing = _check_lines_in_output(tool_output, relevant_lines)
@@ -149,9 +153,9 @@ def audit_sample(sample: dict, idx: int) -> dict:
 
 def _llm_review_sample(client, sample: dict, model: str) -> dict | None:
     """Run LLM-assisted review on a single sample."""
-    task = sample["task"]
+    task = sample["query"]
     tool_output = sample["tool_output"]
-    relevant_lines = sample["relevant_lines"]
+    relevant_lines = extract_relevant_lines(tool_output, sample.get("gold_spans", []))
 
     # Truncate if too long
     truncated = tool_output[:3000] + "\n..." if len(tool_output) > 3000 else tool_output

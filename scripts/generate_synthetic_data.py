@@ -1,9 +1,10 @@
 """Generate synthetic multi-ecosystem tool output data using an LLM.
 
-Produces encoder-format JSONL: {task, tool_output, relevant_lines, tool_type, source}
+Produces canonical v3 JSONL:
+{query, background_task, tool_output, gold_spans, tool_type, source}
 
 Architecture:
-    Pass 1 — LLM generates task + tool_output inside XML markers (free text, no escaping)
+    Pass 1 — LLM generates query + tool_output inside XML markers (free text, no escaping)
     Pass 2 — LLM picks relevant line numbers (plain text, parsed robustly)
     All samples generated concurrently via asyncio.
 
@@ -25,6 +26,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import yaml
+
+from squeez.data.canonical import extract_relevant_lines
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +52,13 @@ def _build_pass1_prompt(
     examples = ""
     for i, ex in enumerate(seed_examples[:2], 1):
         snippet = "\n".join(ex["tool_output"].split("\n")[:15]) + "\n..."
-        examples += f"\nExample {i}:\n<task>\n{ex['task']}\n</task>\n<tool_output>\n{snippet}\n</tool_output>\n"
+        example_query = ex.get("query") or ex.get("task", "")
+        examples += (
+            f"\nExample {i}:\n<query>\n{example_query}\n</query>\n"
+            f"<tool_output>\n{snippet}\n</tool_output>\n"
+        )
 
-    return f"""Generate a realistic {tool_type} tool output for a coding agent debugging task.
+    return f"""Generate a realistic {tool_type} tool output for a coding agent context-pruning task.
 
 Tool type: {tool_type}
 Description: {config["description"]}
@@ -59,9 +66,9 @@ Scenario: {scenario}
 {examples}
 Generate a NEW sample. Use exactly this format:
 
-<task>
-A realistic 2-5 sentence bug/task description with specific packages, errors, file paths.
-</task>
+<query>
+A short, focused extraction query describing what evidence the agent wants from this one tool output.
+</query>
 <tool_output>
 The realistic raw {tool_type} output (50-300 lines). Include realistic package names, versions, file paths, error messages. Mix relevant and irrelevant output.
 </tool_output>"""
@@ -85,7 +92,7 @@ Target 5-30% of non-empty lines. Only lines that help diagnose or fix the task."
 def _parse_pass1(text: str) -> tuple[str, str] | None:
     if not text:
         return None
-    task_m = re.search(r"<task>\s*\n?(.*?)\n?\s*</task>", text, re.DOTALL)
+    task_m = re.search(r"<query>\s*\n?(.*?)\n?\s*</query>", text, re.DOTALL)
     out_m = re.search(r"<tool_output>\s*\n?(.*?)\n?\s*</tool_output>", text, re.DOTALL)
     if not task_m or not out_m:
         return None
@@ -170,12 +177,12 @@ async def _generate_one_sample(
         logger.info(f"  [FAIL] {tool_type} #{sample_idx}: Pass 1 parse failed")
         return None
 
-    task, tool_output = parsed
+    query, tool_output = parsed
     output_lines = tool_output.split("\n")
     non_empty = [line for line in output_lines if line.strip()]
 
-    if len(task) < 20:
-        logger.info(f"  [FAIL] {tool_type} #{sample_idx}: task too short")
+    if len(query) < 10:
+        logger.info(f"  [FAIL] {tool_type} #{sample_idx}: query too short")
         return None
     if len(non_empty) < 5:
         logger.info(
@@ -187,7 +194,7 @@ async def _generate_one_sample(
     numbered = "\n".join(f"{j + 1}: {ln}" for j, ln in enumerate(output_lines))
     p2 = await _call_llm_async(
         client,
-        _build_pass2_prompt(tool_type, task, numbered),
+        _build_pass2_prompt(tool_type, query, numbered),
         model,
         temperature=0.0,
         max_tokens=16384,
@@ -231,39 +238,20 @@ async def _generate_one_sample(
             prev = ln
     spans.append({"start": span_start, "end": prev, "reason": "relevant"})
 
-    # Build numbered output (same format as SWE-bench)
-    numbered_output = "\n".join(f"{j + 1}: {ln}" for j, ln in enumerate(output_lines))
-
-    # Build distilled output (with "... (N lines omitted)" gaps)
-    kept = set(valid_lines)
-    distilled_parts = []
-    i = 1
-    while i <= len(output_lines):
-        if i in kept:
-            distilled_parts.append(f"{i}: {output_lines[i - 1]}")
-            i += 1
-        else:
-            gap_start = i
-            while i <= len(output_lines) and i not in kept:
-                i += 1
-            distilled_parts.append(f"... ({i - gap_start} lines omitted)")
-    distilled_output = "\n".join(distilled_parts)
-
     return {
         "instance_id": f"synthetic__{tool_type}-{sample_idx:04d}",
         "tool_type": tool_type,
         "command": f"synthetic {tool_type}",
-        "output": numbered_output,
+        "tool_output": tool_output,
         "num_lines": len(output_lines),
-        "is_patch_file": False,
-        "distilled_output": distilled_output,
-        "distilled_lines": len(valid_lines),
-        "compression_ratio": round(1 - len(valid_lines) / len(output_lines), 4)
-        if output_lines
-        else 0,
-        "spans": spans,
+        "gold_spans": [
+            {"start_line": span["start"], "end_line": span["end"], "reason": "relevant"}
+            for span in spans
+        ],
         "kept_lines": len(valid_lines),
-        "task": task,
+        "query": query,
+        "background_task": "",
+        "is_irrelevant": False,
         "source": "synthetic",
     }
 
@@ -345,13 +333,12 @@ async def generate_all_async(
                 continue
             neg = {
                 **b,
-                "task": a["task"],
+                "query": a["query"],
+                "background_task": a.get("background_task", ""),
                 "instance_id": f"synthetic__neg-{output_path.stem}-{len(negatives):04d}",
-                "distilled_output": "",
-                "distilled_lines": 0,
-                "compression_ratio": 1.0,
-                "spans": [],
+                "gold_spans": [],
                 "kept_lines": 0,
+                "is_irrelevant": True,
                 "source": "synthetic_negative",
             }
             negatives.append(neg)
@@ -377,7 +364,7 @@ async def generate_all_async(
     for s in all_samples:
         tt = s["tool_type"]
         stats[tt]["n"] += 1
-        if not s["spans"]:
+        if not s["gold_spans"]:
             stats[tt]["empty"] += 1
         stats[tt]["rel"] += s.get("kept_lines", 0)
 
@@ -408,7 +395,10 @@ async def _validate_samples_async(
 
         agreed = 0
         for s in to_check:
-            lines_json = json.dumps(s["relevant_lines"], indent=2)
+            lines_json = json.dumps(
+                extract_relevant_lines(s["tool_output"], s.get("gold_spans", [])),
+                indent=2,
+            )
             trunc = (
                 s["tool_output"][:3000] + "\n..."
                 if len(s["tool_output"]) > 3000
@@ -416,7 +406,7 @@ async def _validate_samples_async(
             )
             prompt = f"""Validate labels for a tool output dataset.
 
-Task: {s["task"]}
+Query: {s["query"]}
 Tool output:
 {trunc}
 Labeled relevant lines:

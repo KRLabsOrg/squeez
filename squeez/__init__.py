@@ -1,4 +1,4 @@
-"""Squeez — Squeeze verbose LLM agent tool output down to only the relevant lines."""
+"""Squeez — Squeeze verbose LLM agent tool output down to only the relevant evidence blocks."""
 
 __version__ = "0.1.0"
 

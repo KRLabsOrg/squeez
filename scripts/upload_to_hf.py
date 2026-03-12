@@ -3,9 +3,9 @@
 Pushes train/dev/test splits + raw source files + DATASET.md.
 
 Usage:
-    python scripts/upload_to_hf.py --data-dir data/v2
-    python scripts/upload_to_hf.py --data-dir data/v2 --repo KRLabsOrg/tool-output-extraction-swebench
-    python scripts/upload_to_hf.py --data-dir data/v2 --dry-run
+    python scripts/upload_to_hf.py --data-dir data/v3
+    python scripts/upload_to_hf.py --data-dir data/v3 --repo KRLabsOrg/tool-output-extraction-swebench
+    python scripts/upload_to_hf.py --data-dir data/v3 --dry-run
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def upload(data_dir: Path, repo_id: str, dry_run: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Upload squeez dataset to HuggingFace Hub")
-    parser.add_argument("--data-dir", type=Path, default=Path("data/v2"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/v3"))
     parser.add_argument("--repo", type=str, default=DEFAULT_REPO)
     parser.add_argument("--dry-run", action="store_true", help="Print stats without uploading")
     args = parser.parse_args(argv)

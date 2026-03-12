@@ -59,12 +59,16 @@ def _first_env_value(*names: str) -> str | None:
 
 
 def _build_messages(task: str, tool_output: str) -> list[dict]:
-    """Build chat messages for extraction."""
+    """Build chat messages for extraction.
+
+    The public API keeps the argument name `task`, but under the v3 benchmark
+    this value is the focused extraction query.
+    """
     if len(task) > 3000:
         task = task[:3000] + "..."
 
     user_content = (
-        f"<task>\n{task}\n</task>\n<tool_output>\n{tool_output}\n</tool_output>"
+        f"<query>\n{task}\n</query>\n<tool_output>\n{tool_output}\n</tool_output>"
         if task
         else f"<tool_output>\n{tool_output}\n</tool_output>"
     )

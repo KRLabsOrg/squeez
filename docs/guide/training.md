@@ -2,7 +2,7 @@
 
 Squeez supports two model architectures:
 
-- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via JSON generation
+- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via XML-wrapped verbatim generation
 - **Encoder** (mmBERT 307M) — fast line-level binary classification with sliding window
 
 Both use the same dataset and produce comparable metrics for direct comparison.
@@ -13,7 +13,7 @@ Both use the same dataset and produce comparable metrics for direct comparison.
 python scripts/download_data.py
 ```
 
-This pulls the [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) into `data/train.jsonl` (8,241 samples), `data/dev.jsonl` (252 samples), and `data/test.jsonl` (557 samples).
+This pulls the released dataset into `data/train.jsonl`, `data/dev.jsonl`, and `data/test.jsonl`.
 
 ## 2. Generative model (Qwen + LoRA)
 
@@ -100,13 +100,13 @@ pip install -r requirements-encoder.txt
 
 ### Prepare data
 
-The encoder uses a different input format than the generative model. Convert the ChatML training data:
+The encoder uses a different input format than the generative model. Convert the canonical/Qwen data:
 
 ```bash
 python scripts/prepare_encoder_data.py
 ```
 
-This produces `data/encoder_{train,dev,test}.jsonl` with `{task, tool_output, relevant_lines, tool_type}`.
+This produces `data/encoder_{train,dev,test}.jsonl` with `{task, tool_output, relevant_lines, tool_type}` derived from canonical spans.
 
 ### Train
 
@@ -179,7 +179,8 @@ python -m squeez.encoder.evaluate \
 
 Metrics computed:
 
-- **Line-level F1** — precision/recall against ground truth relevant lines
+- **Strict line-level F1** — precision/recall against exact ground truth relevant lines
+- **Fuzzy line-level F1** — forgiving line overlap at a fixed threshold
 - **ROUGE-L** — token-level overlap with reference output
 - **Compression ratio** — how much output was filtered
 - **Empty accuracy** — correctly predicting empty vs non-empty
@@ -207,5 +208,5 @@ extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
 # Encoder (auto-detected from config.json)
 extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
 
-result = extractor.extract(task="Fix the bug", tool_output=raw)
+result = extractor.extract(task="Find the relevant evidence block", tool_output=raw)
 ```

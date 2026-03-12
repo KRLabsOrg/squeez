@@ -18,6 +18,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from squeez.data.canonical import extract_relevant_lines, normalize_spans
+
 
 def _extract_user_body(prompt: str) -> str:
     start = "<|im_start|>user\n"
@@ -57,6 +59,34 @@ def _check_line_order(haystack: str, lines: list[str]) -> tuple[bool, bool]:
 
 def audit_sample(sample: dict) -> tuple[dict, dict]:
     """Audit a single sample and return the curated sample + QA info."""
+    if {"query", "tool_output", "gold_spans"} <= set(sample):
+        tool_output = sample["tool_output"]
+        spans = sample.get("gold_spans", [])
+        normalized = normalize_spans(spans, len(tool_output.split("\n")))
+        relevant_lines = extract_relevant_lines(tool_output, normalized)
+        qa = {
+            "status": "pass" if normalized == spans else "fail",
+            "issues": [] if normalized == spans else ["gold_spans_not_normalized"],
+            "response_json_valid": True,
+            "relevant_lines_present_in_prompt": all(line in tool_output for line in relevant_lines),
+            "relevant_lines_in_prompt_order": True,
+            "duplicate_relevant_line_count": len(relevant_lines) - len(set(relevant_lines)),
+            "source_num_relevant_lines": len(relevant_lines),
+            "corrected_num_relevant_lines": len(relevant_lines),
+            "source_num_total_lines": len(tool_output.split("\n")),
+            "source_compression_ratio": (
+                round(1 - len(relevant_lines) / len(tool_output.split("\n")), 4)
+                if tool_output
+                else 0
+            ),
+            "note": "canonical dataset audited via gold_spans over raw tool_output",
+        }
+        curated = dict(sample)
+        curated["gold_spans"] = normalized
+        curated.setdefault("metadata", {})
+        curated["metadata"]["qa"] = qa
+        return curated, qa
+
     prompt = sample.get("prompt", "")
     response = sample.get("response", "")
     metadata = dict(sample.get("metadata", {}))

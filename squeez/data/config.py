@@ -27,12 +27,16 @@ MAX_RELEVANT_RATIO = 0.40
 MIN_RELEVANT_LINES = 3
 MIN_TOTAL_LINES = 10
 MAX_TOOL_OUTPUT_LINES = 500
+MAX_TOOL_PROMPT_LINE_CHARS = 400
+MAX_TOOL_PROMPT_TOTAL_CHARS = 60000
 
 # System prompt for the extraction model
 SYSTEM_PROMPT = (
-    "You extract relevant lines from tool output for a coding task. "
-    "Return the relevant lines inside <relevant_lines> tags, one per line. "
-    "Include ONLY lines the agent needs to see."
+    "You prune verbose tool output for a coding agent. "
+    "Given a focused extraction query and one tool output, return only the "
+    "smallest verbatim evidence block(s) the agent should read next. "
+    "Return the kept text inside <relevant_lines> tags. "
+    "Do not rewrite, summarize, or invent lines."
 )
 
 
@@ -66,6 +70,7 @@ class PipelineConfig:
     # Distillation
     distillation_max_concurrent: int = 50
     distillation_temperature: float = 0.3
+    generate_queries_with_teacher: bool = True
 
     # Execution
     command_timeout: int = 30  # seconds per command

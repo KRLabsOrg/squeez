@@ -1,8 +1,26 @@
 # Data Generation
 
-The training dataset is built from real tool execution against SWE-bench repositories.
+Squeez supports one public dataset-generation workflow:
 
-## Pipeline overview
+- **fresh generation** from SWE-bench + synthetic generation
+
+## Canonical format
+
+The source of truth is:
+
+- `query`
+- `tool_output`
+- `gold_spans`
+
+Qwen and encoder datasets are derived from that canonical representation.
+
+Positive samples should produce non-empty `gold_spans`. If a task-derived
+query fails on a positive sample, the relabeler retries with a
+tool-content-first query. If that still yields no spans, the sample is
+dropped rather than kept as an empty label. Empty rows are reserved for
+explicit negatives.
+
+## Fresh build overview
 
 ```
 SWE-bench instances
@@ -23,58 +41,59 @@ Phase 4: Execute tool calls (real commands against repos)
 Phase 5: Auto-label (heuristic relevance scoring)
     │
     ▼
-Phase 6: LLM distillation (teacher selects relevant spans)
+Phase 6: LLM relabeling/distillation (teacher writes focused query + selects relevant spans)
     │
     ▼
-Phase 7: Assemble into train/eval JSONL
+Phase 7: Assemble canonical/Qwen/encoder splits
     │
     ▼
 Phase 8: Validate dataset quality
 ```
 
-## Running the full pipeline
+## Build from scratch
 
 ```bash
-squeez pipeline --phase 1 2 3 4 5 6 7 8 \
-    --output-dir data \
-    --github-token $GITHUB_TOKEN \
-    --teacher-api-key $GROQ_API_KEY \
-    --teacher-base-url https://api.groq.com/openai/v1
-```
-
-## Running individual phases
-
-```bash
-# Just phase 4 (execute tool calls)
-squeez pipeline --phase 4 --output-dir data
-
-# Phase 6 (LLM distillation) with custom concurrency
-squeez pipeline --phase 6 --output-dir data --concurrency 5
+python scripts/build_full_dataset.py \
+    --output-dir data/v3 \
+    --teacher-model openai/gpt-oss-120b \
+    --teacher-base-url http://localhost:8000/v1
 ```
 
 ## Key design decisions
 
 ### Real tool execution
-All tool calls are executed as real commands (`git grep`, `git blame`, `git log`, `pytest`, `ruff`, `python`, etc.) against bare-cloned repos checked out at the correct SWE-bench base commit. No simulated output.
+SWE tool calls are executed as real commands (`git grep`, `git blame`, `git log`, `pytest`, `ruff`, `python`, etc.) against bare-cloned repos checked out at the correct SWE-bench base commit. Synthetic samples produce realistic raw tool output, but the final labels are still grounded as spans over that raw output.
 
-### Zero-hallucination extraction
-The teacher model (gpt-oss-120b) returns JSON spans (`{"spans": [{"start": N, "end": M}]}`), which are matched against the original output to extract actual text lines. The student never sees generated text — only real lines from the original output.
+### Grounded labels
+The teacher model writes a focused extraction query and returns contiguous spans over a numbered view of the output. Those spans are mapped back onto the original raw output. Canonical labels never store synthetic line numbers.
 
-### Repo-based train/eval split
-Train and eval splits have zero repo overlap. Eval repos (xarray, flask) are entirely held out.
+### Content-first fallback
+The preferred query is still derived from the original task, but only when the
+tool output can actually answer it. If the task-derived query yields no spans
+for a positive sample, Squeez retries with a query driven primarily by the
+tool content itself. This is especially important for reused raw outputs where
+the original tool/file selection may have been noisy.
+
+### One source of truth
+Canonical rows are converted into:
+
+- Qwen SFT rows (`prompt`, XML `response`)
+- encoder rows (`task`, `tool_output`, `relevant_lines`)
+
+so training, evaluation, and QA all derive from the same grounded spans.
 
 ## Tool types
 
-| Tool Type | Weight | Description |
+| Tool Type | Description |
 |-----------|--------|-------------|
-| read_file | 25% | Source file contents via `git show` |
-| grep | 15% | Code search via `git grep` |
-| python | 10% | Python command execution |
-| git_log | 10% | Commit history |
-| test_output | 10% | Test runner output |
-| git_diff | 5% | Diff output |
-| git_blame | 5% | Line-level attribution |
-| ls | 5% | Directory listings |
-| lint_output | 5% | Linter warnings (ruff) |
-| build_output | 5% | Build/compile output |
-| curl | 5% | HTTP responses |
+| read_file | Source file contents via `git show` |
+| grep | Code search via `git grep` |
+| python | Python command execution |
+| git_log | Commit history |
+| test_output | Test runner output |
+| git_diff | Diff output |
+| git_blame | Line-level attribution |
+| ls | Directory listings |
+| lint_output | Linter warnings (ruff) |
+| build_output | Build/compile output |
+| curl | HTTP responses |

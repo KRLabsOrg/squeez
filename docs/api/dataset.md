@@ -1,7 +1,20 @@
 # Dataset
 
-SFT dataset for training.
+Squeez uses a canonical dataset format and derives model-specific views from it.
 
-::: squeez.training.dataset.ExtractionSFTDataset
+Canonical rows contain:
 
-::: squeez.training.dataset.collate_fn
+- `query`
+- `background_task`
+- `tool_output`
+- `gold_spans`
+
+Derived views:
+
+- Qwen SFT: `prompt`, `response`, `metadata`
+- Encoder: `task`, `tool_output`, `relevant_lines`, `tool_type`
+
+See:
+
+- [Dataset Guide](../guide/dataset.md)
+- [Data Generation Guide](../guide/data-generation.md)

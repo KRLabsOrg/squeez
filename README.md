@@ -5,7 +5,7 @@
   <br><em>Squeeze out the juice, leave the pulp behind.</em>
 </p>
 
-Squeeze verbose LLM agent tool output down to only the relevant lines.
+Squeeze verbose LLM agent tool output down to only the relevant evidence blocks.
 
 [![PyPI](https://img.shields.io/pypi/v/squeez)](https://pypi.org/project/squeez/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -19,12 +19,12 @@ Squeez trains small models to identify and extract only the lines that matter fo
 
 Two approaches are available:
 
-- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via JSON generation
+- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via XML-wrapped verbatim output
 - **Encoder** (mmBERT 307M) — fast line-level binary classification, sliding window over long outputs
 
 ## Example
 
-Task: *"Fix the CSRF validation bug in the referer check"*
+Query: *"Find the referer validation block in the CSRF middleware"*
 
 <table>
 <tr>
@@ -100,13 +100,13 @@ class CsrfViewMiddleware(MiddlewareMixin):
 </table>
 
 ```bash
-$ cat django/middleware.py | squeez "Fix the CSRF validation bug in the referer check"
+$ cat django/middleware.py | squeez "Find the referer validation block in the CSRF middleware"
 ```
 
 <details>
 <summary><b>Another example — filtering git log</b></summary>
 
-Task: *"Find the commit that changed the authentication timeout"*
+Query: *"Find the commit that changed the authentication timeout"*
 
 **Before** — 25 commits of noise:
 ```
@@ -156,7 +156,7 @@ pip install -r requirements-encoder.txt
 
 ```bash
 # Pipe tool output through squeez
-cat output.txt | squeez "Fix the CSRF validation bug"
+cat output.txt | squeez "Find the failing traceback block"
 
 # Or with a file
 squeez "Fix the CSRF bug" --input-file output.txt
@@ -183,13 +183,13 @@ extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
 extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1", model_name="squeez")
 
 filtered = extractor.extract(
-    task="Fix the CSRF validation bug in middleware",
+    task="Find the referer validation block in middleware",
     tool_output=raw_output,
 )
-print(filtered)  # Only the relevant lines
+print(filtered)  # Only the relevant evidence block
 ```
 
-Both model types use the same `extract()` API. The generative model returns relevant lines in XML tags, the encoder classifies each line directly. Both return filtered text.
+Both model types use the same `extract()` API. Publicly the argument is still named `task`, but the intended input is a short focused extraction query or agent subgoal. The generative model returns XML-wrapped verbatim text internally, the encoder classifies lines directly. Both return filtered text.
 
 ### Configuration
 
@@ -235,19 +235,19 @@ Do NOT use squeez when:
 - The command is interactive
 ```
 
-This saves context tokens by replacing verbose tool output with only the relevant lines.
+This saves context tokens by replacing verbose tool output with only the relevant evidence block.
 
 Also works with other coding agents (Codex CLI, OpenCode, etc.) via their equivalent instruction files.
 
 ## Training
 
-### 1. Download the dataset
+### 1. Download the released dataset
 
 ```bash
 python scripts/download_data.py
 ```
 
-This pulls the [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) (8,241 train + 252 dev + 557 test) from HuggingFace.
+This pulls the released [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) from HuggingFace.
 
 ### 2a. Train generative model (Qwen + LoRA)
 
@@ -289,49 +289,46 @@ python -m squeez.encoder.evaluate \
     --eval-file data/encoder_test.jsonl
 ```
 
-Both produce the same metrics format (span F1, ROUGE-L, compression ratio) for direct comparison.
+Both produce the same metrics format (strict and fuzzy line overlap, ROUGE-L, compression ratio) for direct comparison.
 
 ## Dataset
 
 Training data: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-| | Train | Dev | Test | Total |
-|---|---:|---:|---:|---:|
-| Samples | 8,241 | 252 | 557 | 9,050 |
+The current system uses one canonical source of truth:
 
-Three data sources covering 30 tool types across multiple ecosystems:
+- `query`: a short focused extraction request or agent subgoal
+- `tool_output`: the raw tool output exactly as seen by the agent
+- `gold_spans`: contiguous spans over the raw output
 
-- **SWE-bench real data** (5,936) — Real tool output from `git grep`, `pytest`, `pip install`, `mypy`, etc. executed on 2,294 cloned Python repos. Labeled by teacher LLM distillation with grounded line spans.
-- **Synthetic multi-ecosystem** (2,039) — LLM-generated tool output for npm, TypeScript, Rust, Go, Java, Docker, Terraform, kubectl, and more.
-- **Synthetic SWE-style** (1,075) — LLM-generated versions of Python tool types that had high noise rates in the real data.
+From that canonical format, Squeez derives:
 
-Test set is manually curated. See the [dataset card](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) for full details on generation, filtering, and curation.
+- Qwen SFT files: `prompt + XML response`
+- encoder files: `task/query + tool_output + relevant_lines`
+
+This keeps training, evaluation, and QA grounded in verbatim source text. See the dataset card for the exact published split details after the next sync.
+
+For the main benchmark, positive samples are expected to have non-empty
+`gold_spans`. If a task-derived query does not yield extractable evidence,
+Squeez retries with a tool-content-first query; if that still yields no spans,
+the sample is dropped. Empty outputs are reserved for explicit negatives.
 
 ## Data Generation
 
-To regenerate the dataset from scratch:
+The supported public path is fresh generation from scratch:
 
 ```bash
-# SWE-bench pipeline (requires cloned repos)
-python squeez/data/pipeline.py --phase 3 4 5 6 7 \
-    --output-dir data/v2 \
-    --teacher-base-url http://localhost:8000/v1 \
-    --teacher-model openai/gpt-oss-120b
-
-# Filter empty samples
-python scripts/filter_distilled.py data/v2/distilled_outputs.jsonl \
-    --output data/v2/distilled_filtered.jsonl
-
-# Synthetic multi-ecosystem
-python scripts/generate_synthetic_data.py \
-    --output data/v2/synthetic_train.jsonl \
-    --base-url http://localhost:8000/v1 \
-    --model openai/gpt-oss-120b
-
-# Merge and assemble
-cat data/v2/distilled_filtered.jsonl data/v2/synthetic_train.jsonl data/v2/synthetic_swe_style.jsonl > data/v2/distilled_outputs.jsonl
-python squeez/data/pipeline.py --phase 7 --output-dir data/v2
+python scripts/build_full_dataset.py \
+    --output-dir data/v3 \
+    --teacher-model openai/gpt-oss-120b \
+    --teacher-base-url http://localhost:8000/v1
 ```
+
+This emits:
+
+- `canonical_train/dev/test.jsonl`
+- `train/dev/test.jsonl`
+- `encoder_train/dev/test.jsonl`
 
 ## Citation
 

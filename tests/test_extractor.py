@@ -20,13 +20,13 @@ def test_format_prompt_truncates_long_task():
     prompt = _format_prompt(long_task, "output")
     assert len(long_task) > 3000
     assert "..." in prompt
-    task_section = prompt.split("<task>\n", 1)[1].split("\n</task>", 1)[0]
+    task_section = prompt.split("<query>\n", 1)[1].split("\n</query>", 1)[0]
     assert len(task_section) == 3003  # 3000 + "..."
 
 
 def test_format_prompt_empty_task():
     prompt = _format_prompt("", "some output")
-    assert "<task>" not in prompt
+    assert "<query>" not in prompt
     assert "some output" in prompt
 
 

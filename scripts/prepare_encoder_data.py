@@ -1,15 +1,16 @@
-"""Prepare encoder training data from assembled HuggingFace splits.
+"""Prepare encoder training data from assembled splits or the HF dataset.
 
 Converts the generative-format train/dev/test JSONL (prompt + response) into
 encoder-format JSONL (task + tool_output + relevant_lines + tool_type).
 
-Uses the pre-split data from HuggingFace or local data/v2/, so the encoder
-model trains and evaluates on exactly the same splits as the generative model.
+Uses either the released HuggingFace dataset or local assembled train/dev/test
+files, so the encoder trains and evaluates on the same splits as the
+generative model.
 
 Usage:
-    python scripts/prepare_encoder_data.py --data-dir data/v2
+    python scripts/prepare_encoder_data.py --data-dir data
     python scripts/prepare_encoder_data.py --from-hf
-    python scripts/prepare_encoder_data.py --data-dir data/v2 --output-dir data/encoder
+    python scripts/prepare_encoder_data.py --data-dir data --output-dir data/encoder
 """
 
 from __future__ import annotations
@@ -25,8 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_from_prompt(prompt: str) -> tuple[str, str]:
-    """Extract task and tool_output from a ChatML-formatted prompt."""
-    task_m = re.search(r"<task>\s*\n?(.*?)\n?\s*</task>", prompt, re.DOTALL)
+    """Extract query/task and tool_output from a ChatML-formatted prompt."""
+    task_m = re.search(r"<query>\s*\n?(.*?)\n?\s*</query>", prompt, re.DOTALL)
+    if not task_m:
+        task_m = re.search(r"<task>\s*\n?(.*?)\n?\s*</task>", prompt, re.DOTALL)
     out_m = re.search(r"<tool_output>\s*\n?(.*?)\n?\s*</tool_output>", prompt, re.DOTALL)
     task = task_m.group(1).strip() if task_m else ""
     tool_output = out_m.group(1).strip() if out_m else ""
@@ -59,6 +62,21 @@ def convert_split(samples: list[dict]) -> list[dict]:
     skipped = 0
 
     for sample in samples:
+        if {"query", "tool_output", "gold_spans", "tool_type"} <= set(sample):
+            from squeez.data.canonical import extract_relevant_lines
+
+            converted.append(
+                {
+                    "task": sample["query"],
+                    "tool_output": sample["tool_output"],
+                    "relevant_lines": extract_relevant_lines(
+                        sample["tool_output"], sample["gold_spans"]
+                    ),
+                    "tool_type": sample["tool_type"],
+                }
+            )
+            continue
+
         task, tool_output = _extract_from_prompt(sample["prompt"])
 
         if not task or not tool_output:

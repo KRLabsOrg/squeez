@@ -1,1 +1,1 @@
-"""Data generation pipeline for tool output extraction training data."""
+"""Data generation helpers for Squeez dataset building."""

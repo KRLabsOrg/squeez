@@ -1,7 +1,6 @@
 """Tests for the unified squeez CLI."""
 
 from squeez import cli
-from squeez.data.pipeline import build_parser as build_pipeline_parser
 from squeez.inference.extractor import build_parser as build_extract_parser
 from squeez.training.evaluate import build_parser as build_eval_parser
 from squeez.training.train import build_parser as build_train_parser
@@ -65,26 +64,18 @@ def test_eval_parser_accepts_clear_and_legacy_model_flags():
     assert args.examples_output == "examples.json"
 
 
-def test_pipeline_parser_accepts_teacher_aliases():
-    parser = build_pipeline_parser()
+def test_cli_build_dataset_parser_accepts_generation_flags():
+    parser = cli.build_parser()
 
-    args = parser.parse_args(["--teacher-model", "gpt-5.4"])
-    assert args.teacher_model == "gpt-5.4"
+    args = parser.parse_args(["build-dataset", "--teacher-model", "openai/gpt-oss-120b"])
+    assert args.command == "build-dataset"
+    assert args.teacher_model == "openai/gpt-oss-120b"
 
-    args = parser.parse_args(["--model", "legacy-teacher"])
-    assert args.teacher_model == "legacy-teacher"
-
-    args = parser.parse_args(["--teacher-base-url", "http://localhost:8000/v1"])
+    args = parser.parse_args(["build-dataset", "--teacher-base-url", "http://localhost:8000/v1"])
     assert args.teacher_base_url == "http://localhost:8000/v1"
 
-    args = parser.parse_args(["--base-url", "http://legacy.example/v1"])
-    assert args.teacher_base_url == "http://legacy.example/v1"
-
-    args = parser.parse_args(["--teacher-api-key", "secret"])
-    assert args.teacher_api_key == "secret"
-
-    args = parser.parse_args(["--api-key", "legacy-secret"])
-    assert args.teacher_api_key == "legacy-secret"
+    args = parser.parse_args(["build-dataset", "--synthetic-small-batch"])
+    assert args.synthetic_small_batch is True
 
 
 def test_cli_defaults_to_extract_mode(monkeypatch):

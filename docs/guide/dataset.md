@@ -2,45 +2,54 @@
 
 Training data: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-## Statistics
-
-| | Count |
-|---|---|
-| **Train samples** | 8,241 |
-| **Dev samples** | 252 |
-| **Test samples** | 557 |
-| **Total** | 9,050 |
-| **SWE-bench real data** | 5,936 |
-| **Synthetic multi-ecosystem** | 2,039 |
-| **Synthetic SWE-style** | 1,075 |
-| **Tool types** | 30 |
-
 ## Data sources
 
-The dataset combines three sources:
+The dataset combines:
 
-1. **SWE-bench real data** — Tool calls executed on 2,294 cloned Python repos from SWE-bench (django, scikit-learn, sympy, etc.). Real `git grep`, `pytest`, `pip install`, `mypy` output. Labeled by a teacher LLM that selects relevant line spans grounded in the original output.
+1. **SWE real data** — Tool calls executed on cloned SWE-bench repositories. Real `git grep`, `pytest`, `pip install`, `mypy`, `git log`, etc. output. Labeled by a teacher LLM that writes a focused query and selects grounded spans over the original output.
 
-2. **Synthetic multi-ecosystem** — LLM-generated tool output for ecosystems beyond Python: npm, TypeScript, Rust, Go, Java, Docker, Terraform, kubectl, and more. Two-pass generation: Pass 1 generates task + output, Pass 2 picks relevant lines.
-
-3. **Synthetic SWE-style** — LLM-generated versions of Python tool types that had poor quality in the real data (high noise rates from environment failures).
+2. **Synthetic multi-ecosystem** — LLM-generated raw tool output for ecosystems beyond Python: npm, TypeScript, Rust, Go, Java, Docker, Terraform, kubectl, and more. A teacher then produces focused queries plus grounded spans over that raw output.
 
 ## Sample format
 
-Each sample has three fields:
+The canonical source of truth is:
 
-### prompt
+```json
+{
+  "instance_id": "django__django-11099",
+  "source": "swe",
+  "tool_type": "read_file",
+  "query": "Find the referer validation block in the CSRF middleware.",
+  "background_task": "Fix the CSRF validation bug...",
+  "tool_output": "class CsrfViewMiddleware ...",
+  "gold_spans": [
+    {"start_line": 1, "end_line": 8, "reason": "relevant"}
+  ],
+  "is_irrelevant": false
+}
+```
 
-System prompt + task description + tool output, formatted with Qwen ChatML tokens:
+From that canonical representation, Squeez derives two model-specific views.
+
+For the main benchmark, positive rows are expected to have non-empty
+`gold_spans`. If a positive sample cannot be answered from its tool output, it
+is dropped after query fallback rather than preserved as an empty label.
+
+### Qwen SFT view
+
+`prompt` contains ChatML with a focused `query`, optional `background_task`, and raw `tool_output`:
 
 ```
 <|im_start|>system
-You extract relevant lines from tool output for a coding task. Return the relevant lines inside <relevant_lines> tags.
+You prune verbose tool output for a coding agent...
 <|im_end|>
 <|im_start|>user
-<task>
+<query>
+Find the referer validation block in the CSRF middleware.
+</query>
+<background_task>
 Fix the CSRF validation bug in django...
-</task>
+</background_task>
 <tool_output>
 class CsrfViewMiddleware(MiddlewareMixin):
     def _check_referer(self, request):
@@ -50,9 +59,7 @@ class CsrfViewMiddleware(MiddlewareMixin):
 <|im_start|>assistant
 ```
 
-### response
-
-Relevant lines wrapped in XML tags:
+`response` contains the extracted verbatim text wrapped in XML:
 
 ```xml
 <relevant_lines>
@@ -62,39 +69,40 @@ class CsrfViewMiddleware(MiddlewareMixin):
 </relevant_lines>
 ```
 
-Or when the output is not relevant to the task:
+### Encoder view
+
+```json
+{
+  "task": "Find the referer validation block in the CSRF middleware.",
+  "tool_output": "class CsrfViewMiddleware ...",
+  "relevant_lines": [
+    "class CsrfViewMiddleware(MiddlewareMixin):",
+    "    def _check_referer(self, request):"
+  ],
+  "tool_type": "read_file"
+}
+```
+
+### Empty / irrelevant samples
+
+Empty rows are reserved for explicit negatives, such as synthetic hard
+negatives where the query is intentionally mismatched with the tool output.
+Those rows store `gold_spans: []`, and the derived Qwen row becomes:
 
 ```xml
 <relevant_lines>
 </relevant_lines>
 ```
 
-### metadata
-
-```json
-{
-    "instance_id": "django__django-11099",
-    "tool_type": "read_file",
-    "source": "swe",
-    "num_total_lines": 42,
-    "num_relevant_lines": 8,
-    "compression_ratio": 0.81
-}
-```
-
-The `source` field is one of `swe`, `synthetic`, or `synthetic_negative` (hard negatives where the task is intentionally mismatched with the tool output).
-
 ## Splits
 
-**SWE-bench data** split by repository (zero instance overlap):
+SWE data is split by repository (zero repo overlap):
 
 - **Test**: `pydata/xarray`, `pallets/flask`
 - **Dev**: `psf/requests`
 - **Train**: all others (django, sympy, scikit-learn, sphinx, matplotlib, pytest, astropy, pylint, seaborn)
 
-**Synthetic data** split per tool type: 10% test, 5% dev, 85% train. Hard negatives capped at ~10% per tool type in test.
-
-The held-out test set was manually curated: 61 overly broad annotations were excluded.
+Synthetic data is split per tool type: 10% test, 5% dev, 85% train. Hard negatives are capped in held-out splits so they do not dominate tool-level evaluation.
 
 ## Tool types
 

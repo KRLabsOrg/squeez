@@ -6,6 +6,8 @@ Metrics for evaluating model quality.
 
 ::: squeez.training.evaluate.compute_span_metrics
 
+::: squeez.training.evaluate.compute_fuzzy_span_metrics
+
 ::: squeez.training.evaluate.compute_partial_overlap
 
 ::: squeez.training.evaluate.compute_empty_accuracy

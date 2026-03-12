@@ -41,6 +41,54 @@ def _extract_identifiers_from_issue(problem_statement: str) -> list[str]:
     return list(set(code_refs + errors))[:10]
 
 
+def _focus_phrase(
+    identifiers: dict[str, list[str]],
+    issue_terms: list[str],
+    patch_files: list[str],
+) -> str:
+    """Pick a concrete focus phrase for a tool-specific extraction query."""
+    for bucket in ("functions", "classes", "error_strings", "variables"):
+        values = identifiers.get(bucket, [])
+        if values:
+            return values[0]
+    if issue_terms:
+        return issue_terms[0]
+    if patch_files:
+        return Path(patch_files[0]).stem.replace("_", " ")
+    return "the relevant bug behavior"
+
+
+def _build_extraction_query(
+    tool_type: str,
+    identifiers: dict[str, list[str]],
+    issue_terms: list[str],
+    patch_files: list[str],
+) -> str:
+    """Build a short, focused extraction query for one tool output."""
+    focus = _focus_phrase(identifiers, issue_terms, patch_files)
+    if tool_type == "read_file":
+        return f"Find the code block most relevant to how {focus} is handled."
+    if tool_type == "grep":
+        return f"Find the grep hits most relevant to how {focus} is handled."
+    if tool_type == "git_log":
+        return f"Find the commit entry most relevant to {focus}."
+    if tool_type == "git_diff":
+        return f"Find the diff hunk most relevant to how {focus} changes."
+    if tool_type == "git_blame":
+        return f"Find the blame block most relevant to {focus}."
+    if tool_type == "ls":
+        return f"Find the directory entries most relevant to {focus}."
+    if tool_type in {"test_output", "build_output", "lint_output", "type_check", "coverage"}:
+        return f"Find the failure block most relevant to {focus}."
+    if tool_type == "python":
+        return f"Find the runtime output block most relevant to {focus}."
+    if tool_type == "curl":
+        return f"Find the API or docs block most relevant to how {focus} is described."
+    if tool_type == "pip_install":
+        return f"Find the dependency error block most relevant to {focus}."
+    return f"Find the evidence block most relevant to {focus}."
+
+
 def _pick_tool_types(n: int) -> list[str]:
     """Pick n tool types according to the configured weights."""
     tools = list(TOOL_WEIGHTS.keys())
@@ -445,6 +493,12 @@ def generate_tool_calls_for_instance(
             call = gen()
             if call:
                 call["instance_id"] = instance["instance_id"]
+                call["query"] = _build_extraction_query(
+                    tool_type,
+                    identifiers,
+                    issue_terms,
+                    patch_files,
+                )
                 calls.append(call)
 
     return calls

@@ -49,6 +49,7 @@ def evaluate_encoder(
     from squeez.training.evaluate import (
         compute_compression_ratio,
         compute_empty_accuracy,
+        compute_fuzzy_span_metrics,
         compute_partial_overlap,
         compute_rouge_l,
         compute_span_metrics,
@@ -82,6 +83,9 @@ def evaluate_encoder(
         "span_recall": [],
         "span_f1": [],
         "exact_match": [],
+        "fuzzy_span_precision": [],
+        "fuzzy_span_recall": [],
+        "fuzzy_span_f1": [],
         "partial_overlap": [],
         "empty_accuracy": [],
         "rouge_l": [],
@@ -116,6 +120,11 @@ def evaluate_encoder(
         all_metrics["span_recall"].append(span["recall"])
         all_metrics["span_f1"].append(span["f1"])
         all_metrics["exact_match"].append(span["exact_match"])
+
+        fuzzy = compute_fuzzy_span_metrics(pred_lines, ref_lines, threshold=0.5)
+        all_metrics["fuzzy_span_precision"].append(fuzzy["precision"])
+        all_metrics["fuzzy_span_recall"].append(fuzzy["recall"])
+        all_metrics["fuzzy_span_f1"].append(fuzzy["f1"])
 
         # Partial overlap
         partial = compute_partial_overlap(pred_lines, ref_lines)

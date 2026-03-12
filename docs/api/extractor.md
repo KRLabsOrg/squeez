@@ -9,3 +9,5 @@ The main entry point for tool output extraction.
 ## Helper functions
 
 ::: squeez.inference.extractor._format_prompt
+
+::: squeez.inference.extractor._build_messages

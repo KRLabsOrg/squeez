@@ -33,7 +33,7 @@ The integration pattern is the same for any agent:
 
 1. Install squeez and configure a backend (local model or API)
 2. Instruct the agent to pipe shell output through `squeez "what to look for"`
-3. The agent gets compressed output with only the relevant lines
+3. The agent gets compressed output with only the relevant evidence block
 
 ## When NOT to use squeez
 
