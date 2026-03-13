@@ -30,6 +30,7 @@ def evaluate_encoder(
     eval_file: str,
     max_samples: int | None = None,
     threshold: float = 0.5,
+    examples_output: str | None = None,
 ) -> dict:
     """Evaluate the encoder model on an eval set.
 
@@ -98,6 +99,7 @@ def evaluate_encoder(
         "false_positive": 0,
         "false_negative": 0,
     }
+    examples: list[dict] = []
 
     for i, sample in enumerate(samples):
         task = sample["task"]
@@ -145,6 +147,29 @@ def evaluate_encoder(
         compression = compute_compression_ratio(tool_output, pred_text)
         all_metrics["compression"].append(compression)
 
+        examples.append(
+            {
+                "task": task,
+                "tool_output": tool_output,
+                "predicted_lines": pred_lines,
+                "reference_lines": ref_lines,
+                "metrics": {
+                    "span_precision": span["precision"],
+                    "span_recall": span["recall"],
+                    "span_f1": span["f1"],
+                    "exact_match": span["exact_match"],
+                    "fuzzy_span_precision": fuzzy["precision"],
+                    "fuzzy_span_recall": fuzzy["recall"],
+                    "fuzzy_span_f1": fuzzy["f1"],
+                    "partial_overlap": partial,
+                    "empty_accuracy": empty["correct"],
+                    "empty_category": empty["category"],
+                    "rouge_l": rouge,
+                    "compression": compression,
+                },
+            }
+        )
+
         if (i + 1) % 10 == 0:
             logger.info(
                 f"  [{i + 1}/{len(samples)}] "
@@ -167,6 +192,11 @@ def evaluate_encoder(
     results["model_type"] = "encoder"
     results["threshold"] = threshold
 
+    if examples_output:
+        with open(examples_output, "w") as f:
+            json.dump(examples, f, indent=2)
+        logger.info(f"Saved per-sample examples to {examples_output}")
+
     logger.info("=" * 60)
     logger.info("ENCODER EVALUATION RESULTS")
     logger.info("=" * 60)
@@ -187,6 +217,11 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--output", default="eval_results_encoder.json", help="Output results file")
+    parser.add_argument(
+        "--examples-output",
+        default=None,
+        help="Optional JSON file for per-sample predictions and metrics",
+    )
     return parser
 
 
@@ -204,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         args.eval_file,
         args.max_samples,
         args.threshold,
+        args.examples_output,
     )
 
     with open(args.output, "w") as f:

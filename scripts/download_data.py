@@ -63,9 +63,7 @@ def main():
         if not args.force and dest.exists():
             continue
         try:
-            downloaded = hf_hub_download(
-                repo_id=repo_id, filename=filename, repo_type="dataset"
-            )
+            downloaded = hf_hub_download(repo_id=repo_id, filename=filename, repo_type="dataset")
             import shutil
 
             shutil.copy2(downloaded, dest)
