@@ -62,6 +62,13 @@ def upload(data_dir: Path, repo_id: str, dry_run: bool = False) -> None:
     api = HfApi()
     extra_files = []
 
+    # Canonical and encoder splits
+    for prefix in ["canonical", "encoder"]:
+        for split in ["train", "dev", "test"]:
+            p = data_dir / f"{prefix}_{split}.jsonl"
+            if p.exists():
+                extra_files.append((p, f"{prefix}_{split}.jsonl"))
+
     # Raw distilled files
     raw_dir = data_dir / "raw"
     if raw_dir.exists():

@@ -46,6 +46,33 @@ def main():
 
     logger.info(f"Done: {len(ds['train'])} train / {len(ds['dev'])} dev / {len(ds['test'])} test")
 
+    # Download encoder and canonical files (uploaded as repo files, not dataset splits)
+    from huggingface_hub import hf_hub_download
+
+    repo_id = "KRLabsOrg/tool-output-extraction-swebench"
+    extra_files = [
+        "encoder_train.jsonl",
+        "encoder_dev.jsonl",
+        "encoder_test.jsonl",
+        "canonical_train.jsonl",
+        "canonical_dev.jsonl",
+        "canonical_test.jsonl",
+    ]
+    for filename in extra_files:
+        dest = output_dir / filename
+        if not args.force and dest.exists():
+            continue
+        try:
+            downloaded = hf_hub_download(
+                repo_id=repo_id, filename=filename, repo_type="dataset"
+            )
+            import shutil
+
+            shutil.copy2(downloaded, dest)
+            logger.info(f"Downloaded {filename}")
+        except Exception as e:
+            logger.warning(f"Could not download {filename}: {e}")
+
 
 if __name__ == "__main__":
     main()
