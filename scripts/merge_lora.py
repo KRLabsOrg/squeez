@@ -68,6 +68,33 @@ def main(argv: list[str] | None = None) -> int:
         tokenizer,
         save_method="merged_16bit",
     )
+
+    # Copy VL processor files from base model if needed (e.g. preprocessor_config.json).
+    # Unsloth saves the VL architecture in config.json but _prepare_text_tokenizer
+    # strips the processor, so these files are missing from the merged output.
+    config_path = Path(args.output) / "config.json"
+    with open(config_path) as f:
+        saved_config = json.load(f)
+    archs = saved_config.get("architectures", [])
+    is_vl = any("ConditionalGeneration" in a or "VL" in a for a in archs)
+
+    if is_vl:
+        import shutil
+
+        from huggingface_hub import hf_hub_download
+
+        vl_files = ["preprocessor_config.json", "chat_template.json"]
+        for filename in vl_files:
+            dest = Path(args.output) / filename
+            if dest.exists():
+                continue
+            try:
+                src = hf_hub_download(base_model_name, filename)
+                shutil.copy(src, dest)
+                logger.info(f"Copied {filename} from {base_model_name}")
+            except Exception:
+                pass  # File may not exist for all models
+
     logger.info(f"Done. Merged model saved to {args.output}")
     return 0
 

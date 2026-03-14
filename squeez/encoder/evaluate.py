@@ -1,4 +1,4 @@
-"""Evaluation script for the encoder line classifier.
+"""Evaluation script for encoder and pooled line classifiers.
 
 Runs inference on an eval set and computes the same metrics as the generative
 model's evaluate.py for direct comparison:
@@ -9,9 +9,17 @@ model's evaluate.py for direct comparison:
 - ROUGE-L
 - Compression ratio
 
+Supports both classifier types (auto-detected from model config):
+- token: SqueezEncoderForLineClassification (token-level with [LINE_SEP])
+- pooled: PooledLineClassifier (line-level mean-pool with [LINE_SEP])
+
 Usage:
     python -m squeez.encoder.evaluate \
         --model-path output/squeez_encoder \
+        --eval-file data/encoder_test.jsonl
+
+    python -m squeez.encoder.evaluate \
+        --model-path output/squeez_pooled \
         --eval-file data/encoder_test.jsonl
 """
 
@@ -21,8 +29,48 @@ import argparse
 import json
 import logging
 import statistics
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _load_model_and_tokenizer(model_path: str):
+    """Load encoder or pooled model from path (auto-detected)."""
+    import json
+
+    import torch
+    from transformers import AutoTokenizer
+
+    from squeez.encoder.model import LINE_SEP_TOKEN
+
+    config_path = Path(model_path) / "config.json"
+    model_type = "encoder"
+    if config_path.exists():
+        with open(config_path) as f:
+            cfg = json.load(f)
+        if cfg.get("model_type") == "squeez-pooled":
+            model_type = "pooled"
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    if tokenizer.convert_tokens_to_ids(LINE_SEP_TOKEN) == tokenizer.unk_token_id:
+        tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEP_TOKEN]})
+
+    if model_type == "pooled":
+        from squeez.encoder.sentence import PooledLineClassifier
+
+        model = PooledLineClassifier.from_pretrained(model_path, trust_remote_code=True)
+    else:
+        from squeez.encoder.model import SqueezEncoderForLineClassification
+
+        model = SqueezEncoderForLineClassification.from_pretrained(
+            model_path, trust_remote_code=True
+        )
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
+    model.eval()
+
+    return model, tokenizer, model_type
 
 
 def evaluate_encoder(
@@ -32,10 +80,12 @@ def evaluate_encoder(
     threshold: float = 0.5,
     examples_output: str | None = None,
 ) -> dict:
-    """Evaluate the encoder model on an eval set.
+    """Evaluate an encoder or pooled model on an eval set.
+
+    Auto-detects model type from config.json (squeez-encoder vs squeez-pooled).
 
     Args:
-        model_path: Path to trained encoder model
+        model_path: Path to trained model
         eval_file: Path to encoder-format JSONL
         max_samples: Maximum samples to evaluate
         threshold: Relevance score threshold
@@ -43,10 +93,6 @@ def evaluate_encoder(
     Returns:
         Dict with aggregate metrics (same format as generative evaluate.py)
     """
-    import torch
-    from transformers import AutoTokenizer
-
-    from squeez.encoder.model import LINE_SEP_TOKEN, SqueezEncoderForLineClassification
     from squeez.training.evaluate import (
         compute_compression_ratio,
         compute_empty_accuracy,
@@ -56,17 +102,8 @@ def evaluate_encoder(
         compute_span_metrics,
     )
 
-    logger.info(f"Loading encoder model from {model_path}")
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-
-    # Ensure LINE_SEP is in tokenizer
-    if tokenizer.convert_tokens_to_ids(LINE_SEP_TOKEN) == tokenizer.unk_token_id:
-        tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEP_TOKEN]})
-
-    model = SqueezEncoderForLineClassification.from_pretrained(model_path, trust_remote_code=True)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
-    model.eval()
+    logger.info(f"Loading model from {model_path}")
+    model, tokenizer, model_type = _load_model_and_tokenizer(model_path)
 
     # Load eval data
     samples = []
@@ -189,7 +226,7 @@ def evaluate_encoder(
 
     results["empty_confusion"] = empty_confusion
     results["num_samples"] = len(samples)
-    results["model_type"] = "encoder"
+    results["model_type"] = model_type
     results["threshold"] = threshold
 
     if examples_output:
@@ -198,7 +235,7 @@ def evaluate_encoder(
         logger.info(f"Saved per-sample examples to {examples_output}")
 
     logger.info("=" * 60)
-    logger.info("ENCODER EVALUATION RESULTS")
+    logger.info(f"EVALUATION RESULTS ({model_type})")
     logger.info("=" * 60)
     for key, stats in results.items():
         if isinstance(stats, dict) and "mean" in stats:

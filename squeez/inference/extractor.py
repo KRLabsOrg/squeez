@@ -1,9 +1,10 @@
 """Runtime tool output extractor for agent integration.
 
-Three backends:
+Four backends:
 - vLLM: connects to a running OpenAI-compatible server (fast, production)
 - transformers: loads generative model locally (no server needed)
-- encoder: loads discriminative encoder model for line classification
+- encoder: loads discriminative encoder model for token-level line classification
+- sentence: loads sentence-level line classifier (per-line with context)
 """
 
 import argparse
@@ -79,28 +80,33 @@ def _build_messages(task: str, tool_output: str) -> list[dict]:
     ]
 
 
-def _is_encoder_model(model_path: str) -> bool:
-    """Check if a model path contains a squeez-encoder model."""
+def _detect_local_model_type(model_path: str) -> str:
+    """Detect the type of a local model: 'encoder', 'pooled', or 'transformers'."""
     import json
 
     config_path = Path(model_path) / "config.json"
     if not config_path.exists():
-        return False
+        return "transformers"
     try:
         with open(config_path) as f:
             config = json.load(f)
-        return config.get("model_type") == "squeez-encoder"
+        if config.get("model_type") == "squeez-pooled":
+            return "pooled"
+        if config.get("model_type") == "squeez-encoder":
+            return "encoder"
     except (json.JSONDecodeError, OSError):
-        return False
+        pass
+    return "transformers"
 
 
 class ToolOutputExtractor:
     """Extract relevant lines from tool output using a fine-tuned model.
 
-    Supports three backends:
+    Supports four backends:
     - vLLM/OpenAI-compatible server: pass base_url
     - Local transformers (generative): pass model_path
-    - Encoder (discriminative): auto-detected from model config, or backend="encoder"
+    - Encoder (token-level): auto-detected from model config, or backend="encoder"
+    - Pooled (line-level): auto-detected from model config, or backend="pooled"
 
     Usage:
         # vLLM (connects to running server)
@@ -111,6 +117,9 @@ class ToolOutputExtractor:
 
         # Encoder (auto-detected)
         extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
+
+        # Pooled line classifier (auto-detected)
+        extractor = ToolOutputExtractor(model_path="./output/squeez_pooled")
 
         filtered = extractor.extract(task="Fix the bug", tool_output=raw)
     """
@@ -152,6 +161,10 @@ class ToolOutputExtractor:
             if not model_path:
                 raise ValueError("Backend is set to encoder, but no local model was configured.")
             self._init_encoder(model_path, device)
+        elif preferred_backend == "pooled":
+            if not model_path:
+                raise ValueError("Backend is set to pooled, but no local model was configured.")
+            self._init_pooled(model_path, device)
         elif preferred_backend == "vllm":
             if not base_url:
                 raise ValueError("Backend is set to vllm, but no server URL was configured.")
@@ -165,8 +178,11 @@ class ToolOutputExtractor:
         elif base_url:
             self._init_vllm(base_url, model_name)
         elif model_path:
-            # Auto-detect encoder vs generative from model config
-            if _is_encoder_model(model_path):
+            # Auto-detect model type from config
+            model_type = _detect_local_model_type(model_path)
+            if model_type == "pooled":
+                self._init_pooled(model_path, device)
+            elif model_type == "encoder":
                 self._init_encoder(model_path, device)
             else:
                 self._init_transformers(model_path, device)
@@ -177,6 +193,27 @@ class ToolOutputExtractor:
                 "  - Env vars: SQUEEZ_LOCAL_MODEL or SQUEEZ_SERVER_URL\n"
                 "  - Config file: squeez.yaml or configs/default.yaml"
             )
+
+    def _init_pooled(self, model_path: str, device: str):
+        """Initialize pooled line classifier backend (single-pass + line-level pool)."""
+        import torch
+        from transformers import AutoTokenizer
+
+        from squeez.encoder.model import LINE_SEP_TOKEN
+        from squeez.encoder.sentence import PooledLineClassifier
+
+        self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+        if self._tokenizer.convert_tokens_to_ids(LINE_SEP_TOKEN) == self._tokenizer.unk_token_id:
+            self._tokenizer.add_special_tokens({"additional_special_tokens": [LINE_SEP_TOKEN]})
+
+        self._model = PooledLineClassifier.from_pretrained(model_path, trust_remote_code=True)
+
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = self._model.to(device)
+        self._model.eval()
+        self._backend = "pooled"
 
     def _init_encoder(self, model_path: str, device: str):
         """Initialize encoder-based backend (discriminative line classifier)."""
@@ -288,6 +325,9 @@ class ToolOutputExtractor:
         if self._backend == "encoder":
             return self._extract_encoder(task, tool_output)
 
+        if self._backend == "pooled":
+            return self._extract_pooled(task, tool_output)
+
         if self._backend == "vllm":
             raw = self._extract_vllm(task, tool_output, max_new_tokens, temperature)
         else:
@@ -345,6 +385,15 @@ class ToolOutputExtractor:
                 results[index] = result
 
         return [result if result is not None else "" for result in results]
+
+    def _extract_pooled(self, task: str, tool_output: str) -> str:
+        """Extract using pooled line classifier (single-pass + line-level pool)."""
+        lines = self._model.extract(
+            task=task,
+            tool_output=tool_output,
+            tokenizer=self._tokenizer,
+        )
+        return "\n".join(lines)
 
     def _extract_encoder(self, task: str, tool_output: str) -> str:
         """Extract using encoder-based line classifier."""

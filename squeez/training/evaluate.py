@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_relevant_lines(text: str) -> list[str]:
-    """Parse relevant_lines from model output (JSON or raw text).
+    """Parse relevant_lines from model output (JSON, XML-wrapped, or raw text).
 
     Handles:
     - Valid JSON: {"relevant_lines": ["line1", "line2"]}
+    - XML-wrapped: <relevant_lines>line1\nline2</relevant_lines>
     - Raw text fallback: split by newlines
     """
     text = text.strip()
@@ -37,7 +38,12 @@ def _parse_relevant_lines(text: str) -> list[str]:
     except (json.JSONDecodeError, TypeError, AttributeError):
         pass
 
-    # Fallback: treat each non-empty line as a span
+    # Strip <relevant_lines> XML wrapper if present
+    m = re.search(r"<relevant_lines>\s*\n?(.*?)\n?\s*</relevant_lines>", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+
+    # Treat each non-empty line as a span
     return [line.strip() for line in text.split("\n") if line.strip()]
 
 
