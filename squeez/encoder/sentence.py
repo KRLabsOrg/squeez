@@ -152,6 +152,8 @@ class PooledLineClassifier(PreTrainedModel):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Mean-pool hidden states per line for each sample in the batch.
 
+        Vectorized: uses torch ops to find boundaries and scatter_add for pooling.
+
         Returns:
             pooled: [batch, max_lines, hidden] — pooled line representations
             line_mask: [batch, max_lines] — True for real lines, False for padding
@@ -159,67 +161,102 @@ class PooledLineClassifier(PreTrainedModel):
         batch_size, seq_len, hidden = hidden_states.shape
         device = hidden_states.device
 
-        # Find line boundaries per sample
-        all_pooled: list[list[torch.Tensor]] = []
-        max_lines = 0
+        # Masks for separator tokens [batch, seq_len]
+        is_sep = input_ids == sep_token_id
+        is_line_sep = input_ids == line_sep_id
 
-        for b in range(batch_size):
-            ids = input_ids[b].tolist()
+        # Find first SEP per sample (skip position 0 which is CLS)
+        # Set position 0 to False to avoid matching CLS
+        is_sep_no_cls = is_sep.clone()
+        is_sep_no_cls[:, 0] = False
 
-            # Find first SEP (end of task) — lines start after it
-            first_sep = -1
-            for i, t in enumerate(ids):
-                if i > 0 and t == sep_token_id:
-                    first_sep = i
-                    break
-            if first_sep < 0:
-                all_pooled.append([])
-                continue
+        # first_sep: first SEP after CLS (end of task)
+        # Use argmax on the mask — returns first True position
+        has_sep = is_sep_no_cls.any(dim=1)
+        first_sep = is_sep_no_cls.float().argmax(dim=1)  # [batch]
 
-            # Collect line boundaries: segments between LINE_SEP tokens
-            # Lines region: first_sep+1 ... final_sep-1
-            # Find final SEP (end of lines) — last non-pad token
-            final_sep = seq_len - 1
-            for i in range(seq_len - 1, first_sep, -1):
-                if ids[i] == sep_token_id:
-                    final_sep = i
-                    break
+        # Build a segment ID for each token: which line does it belong to?
+        # Tokens before first_sep+1 get segment -1 (task region, excluded)
+        # LINE_SEP tokens increment the segment counter
+        # Tokens at/after final SEP get segment -1
 
-            # Collect LINE_SEP positions within lines region
-            sep_positions = []
-            for i in range(first_sep + 1, final_sep):
-                if ids[i] == line_sep_id:
-                    sep_positions.append(i)
+        # Create position indices [batch, seq_len]
+        pos = torch.arange(seq_len, device=device).unsqueeze(0).expand(batch_size, -1)
 
-            # Build line segments
-            boundaries = [first_sep + 1] + sep_positions + [final_sep]
-            line_vectors: list[torch.Tensor] = []
+        # Mask for tokens in the lines region (after first SEP, before padding/final SEP)
+        # We need to find the last SEP per sample
+        # Flip and argmax to find last SEP
+        is_sep_flipped = is_sep.flip(dims=[1])
+        last_sep_from_end = is_sep_flipped.float().argmax(dim=1)  # [batch]
+        final_sep = seq_len - 1 - last_sep_from_end  # [batch]
 
-            for i in range(len(boundaries) - 1):
-                start = boundaries[i]
-                end = boundaries[i + 1]
-                # Skip the LINE_SEP token itself
-                if i > 0:
-                    start += 1
-                if start >= end:
-                    line_vectors.append(torch.zeros(hidden, device=device))
-                    continue
-                line_vectors.append(hidden_states[b, start:end].mean(dim=0))
+        # Lines region: first_sep+1 <= pos < final_sep
+        in_lines = (pos > first_sep.unsqueeze(1)) & (pos < final_sep.unsqueeze(1))
+        in_lines = in_lines & has_sep.unsqueeze(1)
 
-            all_pooled.append(line_vectors)
-            max_lines = max(max_lines, len(line_vectors))
+        # Compute segment IDs via cumsum of LINE_SEP tokens in the lines region
+        # Each LINE_SEP increments the line counter
+        line_sep_in_region = is_line_sep & in_lines
+        segment_ids = line_sep_in_region.long().cumsum(dim=1)  # [batch, seq_len]
 
+        # Exclude tokens outside lines region and LINE_SEP tokens themselves
+        valid_token = in_lines & ~is_line_sep & ~is_sep
+        # Also exclude the SEP tokens that bound the region
+        valid_token = valid_token & (pos != first_sep.unsqueeze(1))
+
+        # Number of lines per sample
+        n_lines_per_sample = segment_ids.max(dim=1).values + 1  # [batch]
+        n_lines_per_sample = n_lines_per_sample.clamp(min=0)
+        # For samples with no valid tokens, set to 0
+        n_lines_per_sample[~has_sep] = 0
+        max_lines = int(n_lines_per_sample.max().item())
         if max_lines == 0:
             max_lines = 1
 
-        # Pad to [batch, max_lines, hidden]
-        pooled = torch.zeros(batch_size, max_lines, hidden, device=device)
-        line_mask = torch.zeros(batch_size, max_lines, dtype=torch.bool, device=device)
+        # Use scatter_add to sum hidden states per (batch, segment)
+        # Flatten to [batch * max_lines] buckets
+        flat_idx = (
+            torch.arange(batch_size, device=device).unsqueeze(1) * max_lines
+            + segment_ids
+        )  # [batch, seq_len]
 
-        for b, vectors in enumerate(all_pooled):
-            for i, vec in enumerate(vectors):
-                pooled[b, i] = vec
-                line_mask[b, i] = True
+        # Zero out invalid positions
+        flat_idx = flat_idx * valid_token.long()  # invalid -> bucket 0 (will be masked)
+
+        # Sum hidden states into buckets
+        pooled_flat = torch.zeros(batch_size * max_lines, hidden, device=device)
+        counts_flat = torch.zeros(batch_size * max_lines, device=device)
+
+        # Expand flat_idx for hidden dim
+        flat_idx_expanded = flat_idx.view(-1).unsqueeze(1).expand(-1, hidden)
+        valid_flat = valid_token.view(-1)
+
+        hidden_flat = hidden_states.view(-1, hidden)
+
+        # Only scatter valid tokens
+        valid_hidden = hidden_flat[valid_flat]
+        valid_idx = flat_idx_expanded[valid_flat]
+
+        pooled_flat.scatter_add_(0, valid_idx, valid_hidden)
+        counts_flat.scatter_add_(
+            0,
+            flat_idx.view(-1)[valid_flat],
+            torch.ones(valid_flat.sum(), device=device),
+        )
+
+        # Mean pool: divide by counts
+        counts_flat = counts_flat.clamp(min=1)
+        pooled_flat = pooled_flat / counts_flat.unsqueeze(1)
+
+        # Reshape to [batch, max_lines, hidden]
+        pooled = pooled_flat.view(batch_size, max_lines, hidden)
+
+        # Line mask: True where we have actual lines
+        line_mask = torch.zeros(batch_size, max_lines, dtype=torch.bool, device=device)
+        for b in range(batch_size):
+            n = int(n_lines_per_sample[b].item())
+            if n > 0:
+                line_mask[b, :n] = True
 
         return pooled, line_mask
 
