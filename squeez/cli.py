@@ -12,15 +12,21 @@ from __future__ import annotations
 import argparse
 import sys
 
-from scripts.build_full_dataset import main as build_dataset_main
 from squeez.inference import extractor
 from squeez.training import evaluate, train
+
+
+def _build_dataset_main(argv: list[str] | None = None) -> int:
+    from scripts.build_full_dataset import main as build_dataset_main
+
+    return build_dataset_main(argv)
+
 
 SUBCOMMANDS = {
     "extract": extractor.main,
     "train": train.main,
     "eval": evaluate.main,
-    "build-dataset": build_dataset_main,
+    "build-dataset": _build_dataset_main,
 }
 
 
