@@ -302,13 +302,25 @@ def train_pooled(
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 
-    # Mark in config for auto-detection
+    # Copy standalone modeling file for trust_remote_code support
     import json
+    import shutil
 
+    standalone_src = Path(__file__).parent / "modeling_squeez_pooled.py"
+    standalone_dst = Path(output_dir) / "modeling_squeez_pooled.py"
+    if standalone_src.exists():
+        shutil.copy(standalone_src, standalone_dst)
+        logger.info(f"Copied standalone modeling file to {standalone_dst}")
+
+    # Set auto_map in config for AutoModel.from_pretrained(..., trust_remote_code=True)
     config_path = Path(output_dir) / "config.json"
     with open(config_path) as f:
         saved_config = json.load(f)
-    saved_config["auto_map"] = {"AutoModel": "model.PooledLineClassifier"}
+    saved_config["auto_map"] = {
+        "AutoConfig": "modeling_squeez_pooled.PooledLineConfig",
+        "AutoModel": "modeling_squeez_pooled.PooledLineClassifier",
+    }
+    saved_config["model_type"] = "squeez-pooled"
     with open(config_path, "w") as f:
         json.dump(saved_config, f, indent=2)
 
