@@ -204,11 +204,12 @@ def train(args: argparse.Namespace):
     logger.info("Starting training...")
     trainer.train()
 
-    # 7. Save
-    logger.info(f"Saving model to {output_dir}")
-    trainer.save_model(output_dir)
+    # 7. Save merged model (LoRA weights folded into base — standalone, no adapter needed)
+    logger.info(f"Merging LoRA and saving full model to {output_dir}")
+    merged_model = model.merge_and_unload()
+    merged_model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    logger.info("Training complete!")
+    logger.info("Training complete! Saved merged model.")
 
 
 def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:

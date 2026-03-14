@@ -79,16 +79,6 @@ def _build_messages(task: str, tool_output: str) -> list[dict]:
     ]
 
 
-def _format_prompt(task: str, tool_output: str) -> str:
-    """Format the input prompt using the ChatML template for local generation."""
-    messages = _build_messages(task, tool_output)
-    return (
-        f"<|im_start|>system\n{messages[0]['content']}<|im_end|>\n"
-        f"<|im_start|>user\n{messages[1]['content']}<|im_end|>\n"
-        f"<|im_start|>assistant\n"
-    )
-
-
 def _is_encoder_model(model_path: str) -> bool:
     """Check if a model path contains a squeez-encoder model."""
     import json
@@ -385,7 +375,10 @@ class ToolOutputExtractor:
         """Extract using local transformers model."""
         import torch
 
-        prompt = _format_prompt(task, tool_output)
+        messages = _build_messages(task, tool_output)
+        prompt = self._tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
         inputs = self._tokenizer(
             prompt,

@@ -1,33 +1,30 @@
 """Tests for squeez core functionality."""
 
 from squeez.data.config import SYSTEM_PROMPT
-from squeez.inference.extractor import _format_prompt, _load_config
+from squeez.inference.extractor import _build_messages, _load_config
 
 
-def test_format_prompt_basic():
-    prompt = _format_prompt("Fix the bug", "class Foo:\n    pass")
-    assert "Fix the bug" in prompt
-    assert "class Foo:" in prompt
-    assert SYSTEM_PROMPT in prompt
-    assert "<|im_start|>system" in prompt
-    assert "<|im_start|>user" in prompt
-    assert "<|im_start|>assistant" in prompt
-    assert "<|im_end|>" in prompt
+def test_build_messages_basic():
+    messages = _build_messages("Fix the bug", "class Foo:\n    pass")
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == SYSTEM_PROMPT
+    assert messages[1]["role"] == "user"
+    assert "Fix the bug" in messages[1]["content"]
+    assert "class Foo:" in messages[1]["content"]
 
 
-def test_format_prompt_truncates_long_task():
+def test_build_messages_truncates_long_task():
     long_task = "x" * 5000
-    prompt = _format_prompt(long_task, "output")
-    assert len(long_task) > 3000
-    assert "..." in prompt
-    task_section = prompt.split("<query>\n", 1)[1].split("\n</query>", 1)[0]
+    messages = _build_messages(long_task, "output")
+    task_section = messages[1]["content"].split("<query>\n", 1)[1].split("\n</query>", 1)[0]
     assert len(task_section) == 3003  # 3000 + "..."
 
 
-def test_format_prompt_empty_task():
-    prompt = _format_prompt("", "some output")
-    assert "<query>" not in prompt
-    assert "some output" in prompt
+def test_build_messages_empty_task():
+    messages = _build_messages("", "some output")
+    assert "<query>" not in messages[1]["content"]
+    assert "some output" in messages[1]["content"]
 
 
 def test_system_prompt_has_relevant_lines_format():
