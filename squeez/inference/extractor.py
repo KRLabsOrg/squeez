@@ -229,17 +229,48 @@ class ToolOutputExtractor:
                 self._model_name = "default"
 
     def _init_transformers(self, model_path: str, device: str):
-        """Initialize local transformers backend."""
+        """Initialize local transformers backend.
+
+        Supports both full models and LoRA/PEFT checkpoints (auto-detected
+        via the presence of adapter_config.json).
+        """
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        self._model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-            device_map=device,
-            trust_remote_code=True,
-        )
+        model_dir = Path(model_path)
+        is_lora = (model_dir / "adapter_config.json").exists()
+
+        if is_lora:
+            import json as _json
+
+            with open(model_dir / "adapter_config.json") as f:
+                adapter_cfg = _json.load(f)
+            base_model_name = adapter_cfg.get("base_model_name_or_path", "")
+            if not base_model_name:
+                raise ValueError(
+                    f"LoRA checkpoint at {model_path} has no base_model_name_or_path "
+                    f"in adapter_config.json"
+                )
+            logger.info(f"Loading LoRA checkpoint: base={base_model_name}, adapter={model_path}")
+            from peft import PeftModel
+
+            base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+                device_map=device,
+                trust_remote_code=True,
+            )
+            self._model = PeftModel.from_pretrained(base_model, model_path)
+            self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        else:
+            self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            self._model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+                device_map=device,
+                trust_remote_code=True,
+            )
+
         self._model.eval()
         self._backend = "transformers"
 
