@@ -232,10 +232,7 @@ class PooledLineClassifier(PreTrainedModel):
         if max_lines == 0:
             max_lines = 1
 
-        flat_idx = (
-            torch.arange(batch_size, device=device).unsqueeze(1) * max_lines
-            + segment_ids
-        )
+        flat_idx = torch.arange(batch_size, device=device).unsqueeze(1) * max_lines + segment_ids
         flat_idx = flat_idx * valid_token.long()
 
         pooled_flat = torch.zeros(batch_size * max_lines, hidden, device=device)

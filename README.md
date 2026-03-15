@@ -17,10 +17,11 @@ LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. 
 
 Squeez trains small models to identify and extract only the lines that matter for the task at hand — compressing tool output by ~86% on average.
 
-Two approaches are available:
+Three approaches are available:
 
 - **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via XML-wrapped verbatim output
-- **Encoder** (mmBERT 307M) — fast line-level binary classification, sliding window over long outputs
+- **Pooled encoder** (ModernBERT / ettin) — single-pass encoder with line-level mean-pool classification, works with any HuggingFace encoder
+- **Token encoder** (mmBERT) — per-token binary classification with sliding window
 
 ## Example
 
@@ -144,7 +145,7 @@ For generative model training (Qwen + LoRA):
 pip install -r requirements-train.txt
 ```
 
-For encoder model training (mmBERT):
+For encoder model training:
 
 ```bash
 pip install -r requirements-encoder.txt
@@ -176,8 +177,8 @@ extractor = ToolOutputExtractor()
 # Or load a generative model locally
 extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
 
-# Or load an encoder model (auto-detected from config.json)
-extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
+# Or load an encoder model (pooled or token, auto-detected from config.json)
+extractor = ToolOutputExtractor(model_path="./output/squeez_pooled")
 
 # Or connect to a server explicitly
 extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1", model_name="squeez")
@@ -259,37 +260,75 @@ squeez train \
 
 Default: Qwen 3.5 2B with LoRA (r=16, alpha=32). See `configs/default.yaml` for all hyperparameters.
 
-### 2b. Train encoder model (mmBERT)
+### 2b. Train pooled encoder (recommended)
 
 ```bash
-# Prepare encoder-format data from the downloaded splits
-python scripts/prepare_encoder_data.py --data-dir data
-
-# Train the encoder
 python -m squeez.encoder.train \
+    --classifier-type pooled \
     --train-file data/encoder_train.jsonl \
     --eval-file data/encoder_dev.jsonl \
-    --base-model jhu-clsp/mmBERT-base \
-    --output-dir output/squeez_encoder
+    --base-model answerdotai/ModernBERT-base \
+    --output-dir output/squeez_pooled \
+    --batch-size 96 \
+    --gradient-accumulation-steps 2 \
+    --max-length 4096 \
+    --learning-rate 2e-5 \
+    --num-epochs 4
 ```
 
-The encoder is a 307M parameter mmBERT with a token classification head. It classifies each line as relevant/irrelevant and uses sliding windows to handle outputs longer than the 8K context.
+The pooled encoder runs a single forward pass over the full input, mean-pools hidden states per line, and classifies each line as relevant/irrelevant. Works with any HuggingFace encoder model (ModernBERT, ettin, DeBERTa, etc.) and uses sliding windows for outputs longer than `--max-length`.
+
+After training, the model can be loaded standalone without squeez installed:
+
+```python
+from transformers import AutoModel, AutoTokenizer
+
+model = AutoModel.from_pretrained("output/squeez_pooled", trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained("output/squeez_pooled")
+
+result = model.process(
+    task="Find the traceback that shows the import error",
+    tool_output=open("output.log").read(),
+    tokenizer=tokenizer,
+)
+print(result["highlighted_lines"])
+```
+
+### 2c. Train token encoder (alternative)
+
+```bash
+python -m squeez.encoder.train \
+    --classifier-type token \
+    --train-file data/encoder_train.jsonl \
+    --eval-file data/encoder_dev.jsonl \
+    --base-model answerdotai/ModernBERT-base \
+    --output-dir output/squeez_encoder
+```
 
 ### 3. Evaluate
 
 ```bash
-# Generative model
+# Generative model (local)
 squeez eval \
     --extractor-model output/squeez_qwen \
-    --eval-file data/test.jsonl
+    --eval-file data/test.jsonl \
+    --max-new-tokens 4096
 
-# Encoder model
+# Generative model (remote vLLM server)
+squeez eval \
+    --server-url http://localhost:8000/v1 \
+    --eval-file data/test.jsonl \
+    --max-new-tokens 4096 \
+    --request-concurrency 8
+
+# Encoder model (pooled or token, auto-detected)
 python -m squeez.encoder.evaluate \
-    --model-path output/squeez_encoder \
-    --eval-file data/encoder_test.jsonl
+    --model-path output/squeez_pooled \
+    --eval-file data/encoder_test.jsonl \
+    --examples-output eval_examples_pooled.json
 ```
 
-Both produce the same metrics format (strict and fuzzy line overlap, ROUGE-L, compression ratio) for direct comparison.
+All produce the same metrics format (strict and fuzzy line overlap, ROUGE-L, compression ratio) for direct comparison.
 
 ## Dataset
 

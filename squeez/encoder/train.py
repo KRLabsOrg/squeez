@@ -252,13 +252,26 @@ def train_pooled(
         eval_dataset = PooledLineDataset(eval_file, tokenizer, max_length)
 
     # Custom trainer that injects token IDs into forward kwargs
+    # and saves tokenizer with each checkpoint
     class PooledTrainer(Trainer):
+        def __init__(self, *args, tokenizer_to_save=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._tokenizer_to_save = tokenizer_to_save
+
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             inputs["line_sep_id"] = model._line_sep_id
             inputs["sep_token_id"] = model._sep_token_id
             outputs = model(**inputs)
             loss = outputs["loss"]
             return (loss, outputs) if return_outputs else loss
+
+        def _save_checkpoint(self, model, trial, metrics=None):
+            super()._save_checkpoint(model, trial, metrics=metrics)
+            if self._tokenizer_to_save is not None:
+                checkpoint_dir = self.state.best_model_checkpoint or (
+                    Path(self.args.output_dir) / f"checkpoint-{self.state.global_step}"
+                )
+                self._tokenizer_to_save.save_pretrained(checkpoint_dir)
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -292,6 +305,7 @@ def train_pooled(
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=collate_pooled_lines,
+        tokenizer_to_save=tokenizer,
     )
 
     logger.info("Starting pooled line classifier training...")
@@ -325,6 +339,7 @@ def train_pooled(
         json.dump(saved_config, f, indent=2)
 
     logger.info("Training complete.")
+    logger.info(f"To clean up checkpoints before uploading: rm -rf {output_dir}/checkpoint-*")
 
 
 def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:

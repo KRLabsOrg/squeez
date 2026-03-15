@@ -216,8 +216,7 @@ class PooledLineClassifier(PreTrainedModel):
         # Use scatter_add to sum hidden states per (batch, segment)
         # Flatten to [batch * max_lines] buckets
         flat_idx = (
-            torch.arange(batch_size, device=device).unsqueeze(1) * max_lines
-            + segment_ids
+            torch.arange(batch_size, device=device).unsqueeze(1) * max_lines + segment_ids
         )  # [batch, seq_len]
 
         # Zero out invalid positions
@@ -559,32 +558,24 @@ class PooledLineDataset(Dataset):
 
 def collate_pooled_lines(batch: list[dict]) -> dict[str, torch.Tensor]:
     """Custom collator: pad input_ids and line_labels separately."""
+    batch_size = len(batch)
     max_seq_len = max(b["input_ids"].shape[0] for b in batch)
     max_lines = max(b["line_labels"].shape[0] for b in batch)
 
-    input_ids = []
-    attention_mask = []
-    line_labels = []
+    # Pre-allocate padded tensors
+    input_ids = torch.zeros(batch_size, max_seq_len, dtype=torch.long)
+    attention_mask = torch.zeros(batch_size, max_seq_len, dtype=torch.long)
+    line_labels = torch.full((batch_size, max_lines), -100, dtype=torch.long)
 
-    for b in batch:
+    for i, b in enumerate(batch):
         seq_len = b["input_ids"].shape[0]
         n_lines = b["line_labels"].shape[0]
-
-        # Pad sequences
-        pad_len = max_seq_len - seq_len
-        input_ids.append(torch.cat([b["input_ids"], torch.zeros(pad_len, dtype=torch.long)]))
-        attention_mask.append(
-            torch.cat([b["attention_mask"], torch.zeros(pad_len, dtype=torch.long)])
-        )
-
-        # Pad line labels with -100
-        label_pad = max_lines - n_lines
-        line_labels.append(
-            torch.cat([b["line_labels"], torch.full((label_pad,), -100, dtype=torch.long)])
-        )
+        input_ids[i, :seq_len] = b["input_ids"]
+        attention_mask[i, :seq_len] = b["attention_mask"]
+        line_labels[i, :n_lines] = b["line_labels"]
 
     return {
-        "input_ids": torch.stack(input_ids),
-        "attention_mask": torch.stack(attention_mask),
-        "line_labels": torch.stack(line_labels),
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "line_labels": line_labels,
     }
