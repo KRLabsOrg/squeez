@@ -5,165 +5,86 @@
   <br><em>Squeeze out the juice, leave the pulp behind.</em>
 </p>
 
-Squeeze verbose LLM agent tool output down to only the relevant evidence blocks.
+LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. Squeez extracts only the lines that matter — compressing tool output by ~86% on average.
 
 [![PyPI](https://img.shields.io/pypi/v/squeez)](https://pypi.org/project/squeez/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Dataset](https://img.shields.io/badge/HF-Dataset-yellow.svg)](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-## The Problem
+## How it works
 
-LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. When an agent reads a 500-line file to find one function, or runs `git log` to find a specific commit, most of the output is noise.
+Squeez uses a fine-tuned Qwen 3.5 2B model to read tool output alongside a task description and return only the relevant lines.
 
-Squeez trains small models to identify and extract only the lines that matter for the task at hand — compressing tool output by ~86% on average.
+```
+$ git log --oneline -25 | squeez "find the commit that changed the auth timeout"
 
-Three approaches are available:
-
-- **Generative** (Qwen 3.5 2B + LoRA) — high-quality extraction via XML-wrapped verbatim output
-- **Pooled encoder** (ModernBERT / ettin) — single-pass encoder with line-level mean-pool classification, works with any HuggingFace encoder
-- **Token encoder** (mmBERT) — per-token binary classification with sliding window
-
-## Example
-
-Query: *"Find the referer validation block in the CSRF middleware"*
-
-<table>
-<tr>
-<th>Before — 42 lines, ~1,200 tokens</th>
-<th>After — 8 lines, ~150 tokens</th>
-</tr>
-<tr>
-<td>
-
-```python
-class CsrfViewMiddleware(MiddlewareMixin):
-    def _check_referer(self, request):
-        referer = request.META.get('HTTP_REFERER')
-        if referer is None:
-            raise RejectRequest('No referer')
-        good_referer = request.get_host()
-        if not same_origin(referer, good_referer):
-            raise RejectRequest('Bad referer')
-
-    def process_view(self, request, callback, ...):
-        if getattr(request, 'csrf_processing_done', False):
-            return None
-        csrf_token = request.META.get('CSRF_COOKIE')
-        if csrf_token is None:
-            return self._reject(request, 'No CSRF cookie')
-        return self._accept(request)
-
-class SessionMiddleware(MiddlewareMixin):
-    def process_request(self, request):
-        session_key = request.COOKIES.get(...)
-        request.session = self.SessionStore(session_key)
-
-    def process_response(self, request, response):
-        if request.session.modified:
-            request.session.save()
-        return response
-
-class CommonMiddleware(MiddlewareMixin):
-    def process_request(self, request):
-        host = request.get_host()
-        if settings.PREPEND_WWW and ...:
-            return redirect(...)
-
-    def process_response(self, request, response):
-        if settings.USE_ETAGS:
-            response['ETag'] = hashlib.md5(...)
-        return response
-
-class SecurityMiddleware(MiddlewareMixin):
-    def process_request(self, request):
-        if settings.SECURE_SSL_REDIRECT and ...:
-            return redirect(...)
+u6v7w8x Change auth timeout from 30m to 1h
 ```
 
-</td>
-<td>
-
-```python
-class CsrfViewMiddleware(MiddlewareMixin):
-    def _check_referer(self, request):
-        referer = request.META.get('HTTP_REFERER')
-        if referer is None:
-            raise RejectRequest('No referer')
-        good_referer = request.get_host()
-        if not same_origin(referer, good_referer):
-            raise RejectRequest('Bad referer')
 ```
-
-**87% compression** — only the CSRF referer logic survives. Session, Common, and Security middleware are irrelevant to the task and get dropped.
-
-</td>
-</tr>
-</table>
-
-```bash
 $ cat django/middleware.py | squeez "Find the referer validation block in the CSRF middleware"
+
+class CsrfViewMiddleware(MiddlewareMixin):
+    def _check_referer(self, request):
+        referer = request.META.get('HTTP_REFERER')
+        if referer is None:
+            raise RejectRequest('No referer')
+        good_referer = request.get_host()
+        if not same_origin(referer, good_referer):
+            raise RejectRequest('Bad referer')
 ```
 
-<details>
-<summary><b>Another example — filtering git log</b></summary>
-
-Query: *"Find the commit that changed the authentication timeout"*
-
-**Before** — 25 commits of noise:
-```
-a1b2c3d Fix typo in README
-e4f5g6h Update CI pipeline
-i7j8k9l Bump version to 2.3.1
-m0n1o2p Add docker-compose.yml
-q3r4s5t Refactor database migrations
-u6v7w8x Change auth timeout from 30m to 1h
-y9z0a1b Fix linting warnings
-c2d3e4f Update dependencies
-...
-```
-
-**After** — the one commit that matters:
-```
-u6v7w8x Change auth timeout from 30m to 1h
-```
-
-```bash
-$ git log --oneline -25 | squeez "find the commit that changed the authentication timeout"
-```
-
-</details>
-
-## Installation
+## Install
 
 ```bash
 pip install squeez
 ```
 
-For generative model training (Qwen + LoRA):
+## Quick start
+
+### Just works (local inference)
+
+By default, squeez downloads and runs `KRLabsOrg/squeez-qwen3.5-2b` locally:
 
 ```bash
-pip install -r requirements-train.txt
-```
+pip install squeez
 
-For encoder model training:
-
-```bash
-pip install -r requirements-encoder.txt
-```
-
-## Quick Start
-
-### CLI
-
-```bash
-# Pipe tool output through squeez
 cat output.txt | squeez "Find the failing traceback block"
-
-# Or with a file
 squeez "Fix the CSRF bug" --input-file output.txt
+```
 
-# Explicit extract subcommand also works
-squeez extract "Fix the CSRF bug" --input-file output.txt
+### With a server (faster, recommended for production)
+
+Serve the model with vLLM, Ollama, or any OpenAI-compatible API:
+
+```bash
+vllm serve KRLabsOrg/squeez-qwen3.5-2b --max-model-len 32768
+```
+
+Then point squeez at it:
+
+```bash
+export SQUEEZ_SERVER_URL=http://localhost:8000/v1
+export SQUEEZ_SERVER_MODEL=KRLabsOrg/squeez-qwen3.5-2b
+
+squeez "Find the bug" --input-file output.txt
+```
+
+Or via CLI flags:
+
+```bash
+squeez "Find the bug" \
+    --server-url http://localhost:8000/v1 \
+    --server-model KRLabsOrg/squeez-qwen3.5-2b \
+    --input-file output.txt
+```
+
+Works with any OpenAI-compatible API (Groq, Together, etc.) — just set the URL, model name, and API key:
+
+```bash
+export SQUEEZ_SERVER_URL=https://api.groq.com/openai/v1
+export SQUEEZ_SERVER_MODEL=squeez
+export SQUEEZ_API_KEY=gsk_...
 ```
 
 ### Python API
@@ -171,57 +92,24 @@ squeez extract "Fix the CSRF bug" --input-file output.txt
 ```python
 from squeez.inference.extractor import ToolOutputExtractor
 
-# Load model from config/env
+# Default: loads KRLabsOrg/squeez-qwen3.5-2b locally
 extractor = ToolOutputExtractor()
 
-# Or load a generative model locally
+# Or connect to a server
+extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1")
+
+# Or use a custom local model
 extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
 
-# Or load an encoder model (pooled or token, auto-detected from config.json)
-extractor = ToolOutputExtractor(model_path="./output/squeez_pooled")
-
-# Or connect to a server explicitly
-extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1", model_name="squeez")
-
 filtered = extractor.extract(
-    task="Find the referer validation block in middleware",
+    task="Find the referer validation block",
     tool_output=raw_output,
 )
-print(filtered)  # Only the relevant evidence block
-```
-
-Both model types use the same `extract()` API. Publicly the argument is still named `task`, but the intended input is a short focused extraction query or agent subgoal. The generative model returns XML-wrapped verbatim text internally, the encoder classifies lines directly. Both return filtered text.
-
-### Configuration
-
-Backend is resolved in order: CLI args > env vars > config file (`squeez.yaml` or `configs/default.yaml`).
-
-```yaml
-# squeez.yaml
-backend: null  # auto-detect from model; or "transformers", "vllm", "encoder"
-local_model_path: "./output/squeez_qwen"
-# server_url: "https://api.groq.com/openai/v1"
-# server_model: "squeez"
-```
-
-```bash
-# Or via environment variables
-export SQUEEZ_LOCAL_MODEL=./output/squeez_qwen
-export SQUEEZ_SERVER_URL=https://api.groq.com/openai/v1
-export SQUEEZ_SERVER_MODEL=squeez
-export SQUEEZ_API_KEY=gsk_...
-```
-
-Clear flag names are available on the CLI, with the old names kept as aliases:
-
-```bash
-squeez "Fix the bug" --local-model ./output/squeez_qwen
-squeez "Fix the bug" --server-url http://localhost:8000/v1 --server-model squeez
 ```
 
 ### Use with Claude Code
 
-Add this to your project's `CLAUDE.md` (or `~/.claude/CLAUDE.md` for global):
+Add to your `CLAUDE.md`:
 
 ```
 Always when you invoke a shell command, pipe it through `squeez` and tell exactly what you want to know.
@@ -236,49 +124,55 @@ Do NOT use squeez when:
 - The command is interactive
 ```
 
-This saves context tokens by replacing verbose tool output with only the relevant evidence block.
+Works with other coding agents (Codex CLI, OpenCode, etc.) via their equivalent instruction files.
 
-Also works with other coding agents (Codex CLI, OpenCode, etc.) via their equivalent instruction files.
+---
 
-## Training
+## Advanced
 
-### 1. Download the released dataset
+<details>
+<summary><b>Configuration</b></summary>
 
-```bash
-python scripts/download_data.py
+Resolved in order: CLI flags > environment variables > config file.
+
+Config file is loaded from the first found: `./squeez.yaml`, `./configs/default.yaml`, `~/.config/squeez/config.yaml`.
+
+```yaml
+# squeez.yaml
+server_url: "http://localhost:8000/v1"
+# local_model_path: "./output/squeez_qwen"  # for local inference instead
+# backend: null  # auto-detect; or "transformers", "vllm", "encoder"
 ```
 
-This pulls the released [tool output extraction dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) from HuggingFace.
+Environment variables:
 
-### 2a. Train generative model (Qwen + LoRA)
+| Variable | Description |
+|----------|-------------|
+| `SQUEEZ_SERVER_URL` | Server URL (vLLM, Ollama, etc.) |
+| `SQUEEZ_LOCAL_MODEL` | Path to local model directory |
+| `SQUEEZ_SERVER_MODEL` | Model name on the server |
+| `SQUEEZ_API_KEY` | API key (if needed) |
+| `SQUEEZ_BACKEND` | Force backend: `transformers`, `vllm`, `encoder` |
 
-```bash
-squeez train \
-    --train-file data/train.jsonl \
-    --eval-file data/dev.jsonl
+</details>
+
+<details>
+<summary><b>Encoder models</b></summary>
+
+Squeez also supports encoder-based extraction (ModernBERT, etc.) as an alternative to the generative model. These are faster but less accurate.
+
+Two encoder approaches:
+- **Token encoder**: per-token binary classification, aggregated per line via max-pool
+- **Pooled encoder**: single-pass encoder with line-level mean-pool classification
+
+```python
+from squeez.inference.extractor import ToolOutputExtractor
+
+extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
+filtered = extractor.extract(task="Find the bug", tool_output=raw_output)
 ```
 
-Default: Qwen 3.5 2B with LoRA (r=16, alpha=32). See `configs/default.yaml` for all hyperparameters.
-
-### 2b. Train pooled encoder (recommended)
-
-```bash
-python -m squeez.encoder.train \
-    --classifier-type pooled \
-    --train-file data/encoder_train.jsonl \
-    --eval-file data/encoder_dev.jsonl \
-    --base-model answerdotai/ModernBERT-base \
-    --output-dir output/squeez_pooled \
-    --batch-size 96 \
-    --gradient-accumulation-steps 2 \
-    --max-length 4096 \
-    --learning-rate 2e-5 \
-    --num-epochs 4
-```
-
-The pooled encoder runs a single forward pass over the full input, mean-pools hidden states per line, and classifies each line as relevant/irrelevant. Works with any HuggingFace encoder model (ModernBERT, ettin, DeBERTa, etc.) and uses sliding windows for outputs longer than `--max-length`.
-
-After training, the model can be loaded standalone without squeez installed:
+Standalone loading without squeez installed:
 
 ```python
 from transformers import AutoModel, AutoTokenizer
@@ -287,74 +181,54 @@ model = AutoModel.from_pretrained("output/squeez_pooled", trust_remote_code=True
 tokenizer = AutoTokenizer.from_pretrained("output/squeez_pooled")
 
 result = model.process(
-    task="Find the traceback that shows the import error",
+    task="Find the traceback",
     tool_output=open("output.log").read(),
     tokenizer=tokenizer,
 )
 print(result["highlighted_lines"])
 ```
 
-### 2c. Train token encoder (alternative)
+</details>
+
+<details>
+<summary><b>Training</b></summary>
+
+See [TRAINING.md](TRAINING.md) for full training and evaluation commands.
 
 ```bash
+# Download dataset
+python scripts/download_data.py
+
+# Train generative model (Qwen 3.5 2B + LoRA)
+squeez train --train-file data/train.jsonl --eval-file data/dev.jsonl
+
+# Train token encoder
 python -m squeez.encoder.train \
     --classifier-type token \
     --train-file data/encoder_train.jsonl \
     --eval-file data/encoder_dev.jsonl \
     --base-model answerdotai/ModernBERT-base \
     --output-dir output/squeez_encoder
+
+# Evaluate
+squeez eval --extractor-model output/squeez_qwen --eval-file data/test.jsonl
 ```
 
-### 3. Evaluate
+</details>
 
-```bash
-# Generative model (local)
-squeez eval \
-    --extractor-model output/squeez_qwen \
-    --eval-file data/test.jsonl \
-    --max-new-tokens 4096
-
-# Generative model (remote vLLM server)
-squeez eval \
-    --server-url http://localhost:8000/v1 \
-    --eval-file data/test.jsonl \
-    --max-new-tokens 4096 \
-    --request-concurrency 8
-
-# Encoder model (pooled or token, auto-detected)
-python -m squeez.encoder.evaluate \
-    --model-path output/squeez_pooled \
-    --eval-file data/encoder_test.jsonl \
-    --examples-output eval_examples_pooled.json
-```
-
-All produce the same metrics format (strict and fuzzy line overlap, ROUGE-L, compression ratio) for direct comparison.
-
-## Dataset
+<details>
+<summary><b>Dataset</b></summary>
 
 Training data: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-The current system uses one canonical source of truth:
-
-- `query`: a short focused extraction request or agent subgoal
-- `tool_output`: the raw tool output exactly as seen by the agent
+Built from SWE-bench repositories. Each sample has:
+- `query`: a focused extraction request or agent subgoal
+- `tool_output`: raw tool output as seen by the agent
 - `gold_spans`: contiguous spans over the raw output
 
-From that canonical format, Squeez derives:
+From this canonical format, Squeez derives generative SFT files and encoder training files.
 
-- Qwen SFT files: `prompt + XML response`
-- encoder files: `task/query + tool_output + relevant_lines`
-
-This keeps training, evaluation, and QA grounded in verbatim source text. See the dataset card for the exact published split details after the next sync.
-
-For the main benchmark, positive samples are expected to have non-empty
-`gold_spans`. If a task-derived query does not yield extractable evidence,
-Squeez retries with a tool-content-first query; if that still yields no spans,
-the sample is dropped. Empty outputs are reserved for explicit negatives.
-
-## Data Generation
-
-The supported public path is fresh generation from scratch:
+To regenerate from scratch:
 
 ```bash
 python scripts/build_full_dataset.py \
@@ -363,11 +237,7 @@ python scripts/build_full_dataset.py \
     --teacher-base-url http://localhost:8000/v1
 ```
 
-This emits:
-
-- `canonical_train/dev/test.jsonl`
-- `train/dev/test.jsonl`
-- `encoder_train/dev/test.jsonl`
+</details>
 
 ## Citation
 
@@ -377,17 +247,6 @@ This emits:
     author={Adam Kovacs},
     year={2026},
     url={https://github.com/KRLabsOrg/squeez}
-}
-```
-
-Built on top of SWE-bench:
-
-```bibtex
-@inproceedings{jimenez2024swebench,
-    title={SWE-bench: Can Language Models Resolve Real-world Github Issues?},
-    author={Carlos E Jimenez and John Yang and Alexander Wettig and Shunyu Yao and Kexin Pei and Ofir Press and Karthik R Narasimhan},
-    booktitle={The Twelfth International Conference on Learning Representations},
-    year={2024}
 }
 ```
 
