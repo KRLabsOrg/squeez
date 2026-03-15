@@ -15,24 +15,109 @@ LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. 
 
 Squeez uses a fine-tuned Qwen 3.5 2B model to read tool output alongside a task description and return only the relevant lines.
 
+### Example — filtering test output
+
+Task: *"Find the test failure related to authentication"*
+
+<table>
+<tr>
+<th>Before — 45 lines, ~1,500 tokens</th>
+<th>After — 6 lines, ~200 tokens</th>
+</tr>
+<tr>
+<td>
+
 ```
-$ git log --oneline -25 | squeez "find the commit that changed the auth timeout"
+$ python -m pytest tests/ -v
+======================== test session starts ========================
+platform linux -- Python 3.12.1, pytest-8.1.1
+collected 23 items
+
+tests/test_auth.py::test_login_valid PASSED
+tests/test_auth.py::test_login_invalid PASSED
+tests/test_auth.py::test_token_refresh FAILED
+tests/test_auth.py::test_logout PASSED
+tests/test_users.py::test_create_user PASSED
+tests/test_users.py::test_delete_user PASSED
+tests/test_users.py::test_list_users PASSED
+tests/test_middleware.py::test_csrf_check PASSED
+tests/test_middleware.py::test_rate_limit PASSED
+tests/test_middleware.py::test_cors_headers PASSED
+
+======================= FAILURES ================================
+_____ test_token_refresh ________________________________________
+
+    def test_token_refresh(self):
+        token = self.client.get_token(expired=True)
+>       refreshed = self.client.refresh(token)
+E       AuthenticationError: Token refresh window expired
+E       Expected: new token within 30m window
+E       Got: rejection after 15m (timeout changed?)
+
+tests/test_auth.py:47: AuthenticationError
+================ short test summary info ========================
+FAILED tests/test_auth.py::test_token_refresh
+================== 1 failed, 9 passed ==========================
+```
+
+</td>
+<td>
+
+```
+tests/test_auth.py::test_token_refresh FAILED
+
+    def test_token_refresh(self):
+        token = self.client.get_token(expired=True)
+>       refreshed = self.client.refresh(token)
+E       AuthenticationError: Token refresh window expired
+E       Expected: new token within 30m window
+E       Got: rejection after 15m (timeout changed?)
+```
+
+**87% compression** — only the failing test and its traceback survive. Passing tests and pytest boilerplate are dropped.
+
+</td>
+</tr>
+</table>
+
+```bash
+$ python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
+```
+
+<details>
+<summary><b>More examples</b></summary>
+
+**Filtering git log:**
+
+```
+$ git log --oneline -25 | squeez "find the commit that changed the authentication timeout"
 
 u6v7w8x Change auth timeout from 30m to 1h
 ```
 
-```
-$ cat django/middleware.py | squeez "Find the referer validation block in the CSRF middleware"
+**Filtering build output:**
 
-class CsrfViewMiddleware(MiddlewareMixin):
-    def _check_referer(self, request):
-        referer = request.META.get('HTTP_REFERER')
-        if referer is None:
-            raise RejectRequest('No referer')
-        good_referer = request.get_host()
-        if not same_origin(referer, good_referer):
-            raise RejectRequest('Bad referer')
 ```
+$ npm run build 2>&1 | squeez "find the TypeScript error"
+
+src/components/Auth.tsx(34,5): error TS2345: Argument of type 'string' is
+  not assignable to parameter of type 'AuthToken'.
+```
+
+**Filtering kubectl output:**
+
+```
+$ kubectl describe pod api-server-7d4b | squeez "why is the pod failing"
+
+    State:          Waiting
+      Reason:       CrashLoopBackOff
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    1
+  Warning  BackOff  3m (x5)  kubelet  Back-off restarting failed container
+```
+
+</details>
 
 ## Install
 
