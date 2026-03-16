@@ -5,24 +5,25 @@
   <br><em>Squeeze out the juice, leave the pulp behind.</em>
 </p>
 
-LLM coding agents waste **80-95% of context tokens** on irrelevant tool output. Squeez extracts only the lines that matter — compressing tool output by ~86% on average.
+LLM coding agents waste 80-95% of context tokens on irrelevant tool output. Squeez extracts only the lines that matter, compressing tool output by ~91% while keeping 86% of the relevant information.
 
 [![PyPI](https://img.shields.io/pypi/v/squeez)](https://pypi.org/project/squeez/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Model](https://img.shields.io/badge/HF-Squeez--2B-yellow.svg)](https://huggingface.co/KRLabsOrg/squeez-2b)
 [![Dataset](https://img.shields.io/badge/HF-Dataset-yellow.svg)](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## How it works
 
 Squeez uses a fine-tuned Qwen 3.5 2B model to read tool output alongside a task description and return only the relevant lines.
 
-### Example — filtering test output
+### Example: filtering test output
 
 Task: *"Find the test failure related to authentication"*
 
 <table>
 <tr>
-<th>Before — 45 lines, ~1,500 tokens</th>
-<th>After — 6 lines, ~200 tokens</th>
+<th>Before (45 lines, ~1,500 tokens)</th>
+<th>After (6 lines, ~200 tokens)</th>
 </tr>
 <tr>
 <td>
@@ -74,7 +75,7 @@ E       Expected: new token within 30m window
 E       Got: rejection after 15m (timeout changed?)
 ```
 
-**87% compression** — only the failing test and its traceback survive. Passing tests and pytest boilerplate are dropped.
+**87% compression.** Only the failing test and its traceback survive.
 
 </td>
 </tr>
@@ -119,6 +120,20 @@ $ kubectl describe pod api-server-7d4b | squeez "why is the pod failing"
 
 </details>
 
+## Results
+
+Evaluated on 617 held-out test samples from SWE-bench, across 14 tool types:
+
+| Model | Precision | Recall | F1 | Compression |
+|-------|-----------|--------|------|-------------|
+| **Squeez-2B** | **0.8043** | **0.8624** | **0.7895** | 0.9150 |
+| Qwen 3.5 35B A3B (zero-shot) | 0.7402 | 0.7498 | 0.7000 | 0.9177 |
+| Qwen 3.5 2B (untrained) | 0.4154 | 0.5299 | 0.4075 | 0.8197 |
+| BM25 (10%) | 0.1277 | 0.2172 | 0.1314 | 0.9036 |
+| Random (10%) | 0.0738 | 0.1009 | 0.0697 | 0.9067 |
+
+Squeez-2B (2B params) outperforms a 35B MoE model at zero-shot and is 6x better than BM25 on Span F1. Full results in [RESULTS.md](RESULTS.md).
+
 ## Install
 
 ```bash
@@ -127,9 +142,25 @@ pip install squeez
 
 ## Quick start
 
-### Just works (local inference)
+### With vLLM (recommended)
 
-By default, squeez downloads and runs `KRLabsOrg/squeez-qwen3.5-2b` locally:
+```bash
+# Start the server
+pip install vllm
+vllm serve KRLabsOrg/squeez-2b --dtype bfloat16 --max-model-len 16384
+
+# Use from squeez CLI
+pip install squeez
+export SQUEEZ_SERVER_URL=http://localhost:8000/v1
+cat output.txt | squeez "find the bug"
+
+# Or pipe directly
+python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
+```
+
+vLLM keeps the model warm in memory with batched inference and high throughput.
+
+### Local inference (no server)
 
 ```bash
 pip install squeez
@@ -138,33 +169,11 @@ cat output.txt | squeez "Find the failing traceback block"
 squeez "Fix the CSRF bug" --input-file output.txt
 ```
 
-### With a server (faster, recommended for production)
+> **Note:** Local mode loads the model on every call. Fine for one-off use, but for repeated calls (e.g. an agent piping every tool through squeez), use vLLM.
 
-Serve the model with vLLM, Ollama, or any OpenAI-compatible API:
+### Any OpenAI-compatible API
 
-```bash
-vllm serve KRLabsOrg/squeez-qwen3.5-2b --max-model-len 32768
-```
-
-Then point squeez at it:
-
-```bash
-export SQUEEZ_SERVER_URL=http://localhost:8000/v1
-export SQUEEZ_SERVER_MODEL=KRLabsOrg/squeez-qwen3.5-2b
-
-squeez "Find the bug" --input-file output.txt
-```
-
-Or via CLI flags:
-
-```bash
-squeez "Find the bug" \
-    --server-url http://localhost:8000/v1 \
-    --server-model KRLabsOrg/squeez-qwen3.5-2b \
-    --input-file output.txt
-```
-
-Works with any OpenAI-compatible API (Groq, Together, etc.) — just set the URL, model name, and API key:
+Works with Groq, Together, or any OpenAI-compatible server. Set the URL, model name, and API key:
 
 ```bash
 export SQUEEZ_SERVER_URL=https://api.groq.com/openai/v1
@@ -177,7 +186,7 @@ export SQUEEZ_API_KEY=gsk_...
 ```python
 from squeez.inference.extractor import ToolOutputExtractor
 
-# Default: loads KRLabsOrg/squeez-qwen3.5-2b locally
+# Default: loads KRLabsOrg/squeez-2b locally
 extractor = ToolOutputExtractor()
 
 # Or connect to a server
