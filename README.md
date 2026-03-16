@@ -5,18 +5,22 @@
   <br><em>Squeeze out the juice, leave the pulp behind.</em>
 </p>
 
-LLM coding agents waste 80-95% of context tokens on irrelevant tool output. Squeez extracts only the lines that matter, compressing tool output by ~91% while keeping 86% of the relevant information.
-
 [![PyPI](https://img.shields.io/pypi/v/squeez)](https://pypi.org/project/squeez/)
 [![Model](https://img.shields.io/badge/HF-Squeez--2B-yellow.svg)](https://huggingface.co/KRLabsOrg/squeez-2b)
 [![Dataset](https://img.shields.io/badge/HF-Dataset-yellow.svg)](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-## How it works
+- Tool output pruner for LLM coding agents
+- Pipe any tool output (pytest, grep, git log, npm build, kubectl, ...) through squeez with a task description, get back only the relevant lines
+- Fine-tuned Qwen 3.5 2B, 0.79 F1, ~91% compression
+- CLI pipe, Python library, or vLLM server
 
-Squeez uses a fine-tuned Qwen 3.5 2B model to read tool output alongside a task description and return only the relevant lines.
+```bash
+pip install squeez
+python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
+```
 
-### Example: filtering test output
+## Example
 
 Task: *"Find the test failure related to authentication"*
 
@@ -81,10 +85,6 @@ E       Got: rejection after 15m (timeout changed?)
 </tr>
 </table>
 
-```bash
-$ python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
-```
-
 <details>
 <summary><b>More examples</b></summary>
 
@@ -134,18 +134,11 @@ Evaluated on 617 held-out test samples from SWE-bench, across 14 tool types:
 
 Squeez-2B (2B params) outperforms a 35B MoE model at zero-shot and is 6x better than BM25 on Span F1.
 
-## Install
-
-```bash
-pip install squeez
-```
-
 ## Quick start
 
 ### With vLLM (recommended)
 
 ```bash
-# Start the server
 pip install vllm
 vllm serve KRLabsOrg/squeez-2b --dtype bfloat16 --max-model-len 16384
 
@@ -153,9 +146,6 @@ vllm serve KRLabsOrg/squeez-2b --dtype bfloat16 --max-model-len 16384
 pip install squeez
 export SQUEEZ_SERVER_URL=http://localhost:8000/v1
 cat output.txt | squeez "find the bug"
-
-# Or pipe directly
-python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
 ```
 
 vLLM keeps the model warm in memory with batched inference and high throughput.
@@ -191,9 +181,6 @@ extractor = ToolOutputExtractor()
 
 # Or connect to a server
 extractor = ToolOutputExtractor(base_url="http://localhost:8000/v1")
-
-# Or use a custom local model
-extractor = ToolOutputExtractor(model_path="./output/squeez_qwen")
 
 filtered = extractor.extract(
     task="Find the referer validation block",
