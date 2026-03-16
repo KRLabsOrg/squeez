@@ -490,11 +490,14 @@ def evaluate_model(
             record_result(result)
 
             if (i + 1) % 10 == 0:
-                logger.info(
-                    f"  [{i + 1}/{len(samples)}] "
-                    f"F1={result['span']['f1']:.3f} EM={result['span']['exact_match']:.0f} "
-                    f"ROUGE-L={result['rouge']:.3f}"
-                )
+                if "error" not in result:
+                    logger.info(
+                        f"  [{i + 1}/{len(samples)}] "
+                        f"F1={result['span']['f1']:.3f} EM={result['span']['exact_match']:.0f} "
+                        f"ROUGE-L={result['rouge']:.3f}"
+                    )
+                else:
+                    logger.info(f"  [{i + 1}/{len(samples)}] (last sample errored)")
 
     # Aggregate
     results = {}

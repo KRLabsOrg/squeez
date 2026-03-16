@@ -15,6 +15,8 @@
 - Fine-tuned Qwen 3.5 2B, 0.79 F1, ~91% compression
 - CLI pipe, Python library, or vLLM server
 
+Existing context pruning tools ([SWE-Pruner](https://github.com/Ayanami1314/swe-pruner), [Zilliz Semantic Highlight](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1), [Provence](https://arxiv.org/abs/2501.16214)) are built for source code or document paragraphs. They don't handle the mixed, unstructured format of tool output (stack traces interleaved with passing tests, grep matches with context lines, build logs with timestamps). Squeez is trained specifically on 14 types of tool output from real SWE-bench workflows.
+
 ```bash
 pip install squeez
 python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
@@ -128,6 +130,7 @@ Evaluated on 617 held-out test samples from SWE-bench, across 14 tool types:
 |-------|-----------|--------|------|-------------|
 | **Squeez-2B** | **0.8043** | **0.8624** | **0.7895** | 0.9150 |
 | Qwen 3.5 35B A3B (zero-shot) | 0.7402 | 0.7498 | 0.7000 | 0.9177 |
+| Kimi K2 (zero-shot) | 0.6128 | 0.5286 | 0.5344 | 0.9425 |
 | Qwen 3.5 2B (untrained) | 0.4154 | 0.5299 | 0.4075 | 0.8197 |
 | BM25 (10%) | 0.1277 | 0.2172 | 0.1314 | 0.9036 |
 | Random (10%) | 0.0738 | 0.1009 | 0.0697 | 0.9067 |

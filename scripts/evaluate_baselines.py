@@ -232,13 +232,10 @@ def baseline_swe_pruner(model, task: str, tool_output: str, threshold: float = 0
 
 def _load_zilliz():
     """Load Zilliz semantic-highlight (needs: pip install transformers torch)."""
-    import torch
     from transformers import AutoModel
 
     model_name = "zilliz/semantic-highlight-bilingual-v1"
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, dtype=torch.float16)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
     model.eval()
     return model
 
@@ -246,10 +243,8 @@ def _load_zilliz():
 def baseline_zilliz(model, task: str, tool_output: str, threshold: float = 0.5) -> list[str]:
     """Run Zilliz semantic-highlight via get_raw_predictions().
 
-    Uses the low-level API to avoid the broken process() path in
-    transformers 5.2 (build_inputs_with_special_tokens removed).
-    Each line is passed as a separate context, and per-token pruning
-    probabilities are averaged per line.
+    Uses per-line contexts since process() does nltk sentence splitting
+    which doesn't handle tool output lines well.
     """
     import torch
 
@@ -286,24 +281,48 @@ def _load_gliner2():
 
 
 def baseline_gliner2(model, task: str, tool_output: str) -> list[str]:
-    """Run GLiNER2 span extraction with 'relevant' as the entity label.
+    """Run GLiNER2 span extraction — keep any line containing an extracted entity.
 
-    Uses the task description as the label description to guide extraction.
-    Extracted spans are mapped back to line numbers.
+    Uses the task as a short label to guide entity extraction.
+    Any line that overlaps with an extracted span is kept.
     """
     lines = tool_output.split("\n")
     if not lines:
         return []
 
-    # Use the task as the entity description for guided extraction
-    result = model.extract_entities(
-        tool_output,
-        {"relevant": f"Text relevant to: {task}"},
-        include_spans=True,
-    )
+    # GLiNER2 has a max input length; truncate if needed
+    max_chars = 10000
+    text = tool_output[:max_chars] if len(tool_output) > max_chars else tool_output
 
-    entities = result.get("entities", {}).get("relevant", [])
-    if not entities:
+    # GLiNER2 works best with NER-style labels, not query descriptions.
+    # Use a fixed set of labels covering common relevant patterns in tool output.
+    labels = [
+        "error message",
+        "failed test",
+        "stack trace",
+        "warning",
+        "relevant code",
+        "file path",
+        "configuration",
+    ]
+
+    try:
+        result = model.extract_entities(
+            text,
+            labels,
+            include_spans=True,
+        )
+    except Exception as e:
+        logger.debug(f"GLiNER2 extract_entities failed: {e}")
+        return []
+
+    # result = {'entities': {'label': [{'text': ..., 'start': N, 'end': N}, ...]}}
+    all_entities = []
+    for label_entities in result.get("entities", {}).values():
+        if isinstance(label_entities, list):
+            all_entities.extend(label_entities)
+
+    if not all_entities:
         return []
 
     # Build line offset map
@@ -315,9 +334,12 @@ def baseline_gliner2(model, task: str, tool_output: str) -> list[str]:
 
     # Map character spans to line indices
     kept_indices = set()
-    for entity in entities:
-        span_start = entity.get("start", 0)
-        span_end = entity.get("end", 0)
+    for entity in all_entities:
+        if isinstance(entity, dict):
+            span_start = entity.get("start", 0)
+            span_end = entity.get("end", 0)
+        else:
+            continue
         for i, (lo, hi) in enumerate(line_offsets):
             if span_start < hi and span_end > lo:
                 kept_indices.add(i)
