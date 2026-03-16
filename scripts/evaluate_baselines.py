@@ -474,10 +474,8 @@ def main():
                     "Zilliz Semantic-Highlight", baseline_zilliz, samples, model=model
                 )
             )
-        except ImportError:
-            logger.error("transformers not available for zilliz model")
         except Exception as e:
-            logger.error(f"Zilliz failed: {e}")
+            logger.error(f"Zilliz failed: {type(e).__name__}: {e}")
 
     if "gliner2" in baselines:
         logger.info("Loading GLiNER2...")
