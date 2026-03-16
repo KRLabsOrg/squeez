@@ -32,3 +32,4 @@ Thumbs.db
 wandb/
 runs/
 checkpoints/
+output/

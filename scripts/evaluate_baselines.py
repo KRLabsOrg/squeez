@@ -236,7 +236,7 @@ def _load_zilliz():
     from transformers import AutoModel
 
     model_name = "zilliz/semantic-highlight-bilingual-v1"
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, dtype=torch.float16)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
@@ -244,40 +244,35 @@ def _load_zilliz():
 
 
 def baseline_zilliz(model, task: str, tool_output: str, threshold: float = 0.5) -> list[str]:
-    """Run Zilliz semantic-highlight via its process() API.
+    """Run Zilliz semantic-highlight via get_raw_predictions().
 
-    The model takes (question, context) and returns highlighted sentences
-    with per-sentence probabilities.
+    Uses the low-level API to avoid the broken process() path in
+    transformers 5.2 (build_inputs_with_special_tokens removed).
+    Each line is passed as a separate context, and per-token pruning
+    probabilities are averaged per line.
     """
+    import torch
+
     lines = tool_output.split("\n")
-    if not lines:
+    non_empty = [line for line in lines if line.strip()]
+    if not non_empty:
         return []
 
-    result = model.process(
-        question=task,
-        context=tool_output,
-        threshold=threshold,
-        return_sentence_metrics=True,
-        show_progress=False,
-    )
+    with torch.no_grad():
+        raw = model.get_raw_predictions(query=task, contexts=non_empty)
 
-    highlighted = result.get("highlighted_sentences", [])
-    if not highlighted:
-        return []
-
-    # Map highlighted sentences back to original lines
-    # (Zilliz works at sentence level, we need line level)
-    highlighted_set = set(s.strip() for s in highlighted)
     kept = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Check if this line is contained in any highlighted sentence
-        for hs in highlighted_set:
-            if stripped in hs or hs in stripped:
-                kept.append(line)
-                break
+    for i, line in enumerate(non_empty):
+        if i >= len(raw.context_ranges):
+            break
+        start, end = raw.context_ranges[i]
+        segment = raw.pruning_probs[start:end]
+        if segment.size > 0:
+            score = float(segment.mean())
+        else:
+            score = 0.0
+        if score >= threshold:
+            kept.append(line)
 
     return kept
 
