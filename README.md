@@ -132,7 +132,7 @@ Evaluated on 617 held-out test samples from SWE-bench, across 14 tool types:
 | BM25 (10%) | 0.1277 | 0.2172 | 0.1314 | 0.9036 |
 | Random (10%) | 0.0738 | 0.1009 | 0.0697 | 0.9067 |
 
-Squeez-2B (2B params) outperforms a 35B MoE model at zero-shot and is 6x better than BM25 on Span F1. Full results in [RESULTS.md](RESULTS.md).
+Squeez-2B (2B params) outperforms a 35B MoE model at zero-shot and is 6x better than BM25 on Span F1.
 
 ## Install
 
