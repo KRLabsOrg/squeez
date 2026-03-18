@@ -2,6 +2,22 @@
 
 All notable changes to Squeez are documented here.
 
+## [0.1.3] - 2026-03-18
+
+### Fixed
+- **Model-agnostic inference**: replaced hardcoded Qwen ChatML template with `tokenizer.apply_chat_template()` — local transformers backend now works with any model family
+- **vLLM model name bug**: server model name from env var was not being passed through to API calls, causing 400 errors on providers like Groq
+
+### Added
+- **Pooled line classifier backend**: new `pooled` backend for sentence-level classification
+- **LoRA auto-detection**: transformers backend auto-detects and loads LoRA/PEFT checkpoints
+- **Batch extraction**: `extract_many()` with concurrent requests for remote backends
+- **Encoder model**: token-level line classification with mmBERT
+
+### Changed
+- **Inference refactor**: shared `_build_messages()` used by both vLLM and transformers backends
+- **Query tag**: renamed `<task>` to `<query>` in prompt formatting
+
 ## [0.1.2] - 2026-03-08
 
 ### Fixed
