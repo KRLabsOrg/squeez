@@ -247,7 +247,9 @@ class ToolOutputExtractor:
         self._backend = "vllm"
 
         # Auto-detect model name from server if not provided
-        if not model_name:
+        if model_name:
+            self._model_name = model_name
+        else:
             try:
                 models = self._client.models.list()
                 self._model_name = models.data[0].id
