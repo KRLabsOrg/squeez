@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-label="Qualitative example">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fcf8ff"/>
+      <stop offset="100%" stop-color="#f7fbff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#23304f" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 50px Inter, ui-sans-serif, system-ui, sans-serif; fill: #182033; }
+      .subtitle { font: 400 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #5b6782; }
+      .card { fill: rgba(255,255,255,0.92); stroke: #dbe2f2; stroke-width: 2; rx: 28; }
+      .head { font: 700 28px Inter, ui-sans-serif, system-ui, sans-serif; fill: #1f2940; }
+      .body { font: 400 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #56627e; }
+      .mono { font: 500 22px "SFMono-Regular", ui-monospace, Menlo, monospace; fill: #32405d; }
+      .muted { fill: #eff3f9; rx: 18; }
+      .hl { fill: #fff1a8; rx: 12; }
+      .badge { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: white; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <text x="90" y="90" class="title">Qualitative pruning example</text>
+  <text x="90" y="132" class="subtitle">The useful block is local and verbatim even when the observation itself is long and operationally noisy.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="180" width="1420" height="120" class="card"/>
+    <rect x="120" y="208" width="120" height="42" rx="21" fill="#6f63ff"/>
+    <text x="155" y="236" class="badge">Query</text>
+    <text x="120" y="275" class="mono">Find the block that shows the OOMKilled reason and exit code for the analytics-worker container.</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="350" width="690" height="520" class="card"/>
+    <text x="125" y="398" class="head">Raw tool output (excerpt from 250 lines)</text>
+    <rect x="125" y="425" width="620" height="390" rx="20" fill="#eef3f9"/>
+    <text x="155" y="485" class="mono" fill="#73809c">23:   State:       Waiting</text>
+    <text x="155" y="545" class="mono" fill="#73809c">24:     Reason:    CrashLoopBackOff</text>
+    <text x="155" y="605" class="mono" fill="#73809c">25:   Last State:  Terminated</text>
+    <rect x="142" y="630" width="570" height="44" class="hl"/>
+    <text x="155" y="660" class="mono">26:     Reason:    OOMKilled</text>
+    <rect x="142" y="688" width="570" height="44" class="hl"/>
+    <text x="155" y="718" class="mono">27:     Exit Code: 137</text>
+    <text x="155" y="778" class="mono" fill="#73809c">28:     Started:   Mon, 10 Mar 2026 08:12:45 +0000</text>
+    <text x="155" y="838" class="mono" fill="#73809c">30:   Ready:       False</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="840" y="350" width="670" height="520" class="card"/>
+    <text x="875" y="398" class="head">Gold extracted span</text>
+    <rect x="875" y="425" width="600" height="190" rx="20" fill="#eef3f9"/>
+    <rect x="892" y="475" width="566" height="44" class="hl"/>
+    <text x="905" y="505" class="mono">26:     Reason:    OOMKilled</text>
+    <rect x="892" y="533" width="566" height="44" class="hl"/>
+    <text x="905" y="563" class="mono">27:     Exit Code: 137</text>
+
+    <text x="875" y="680" class="head">Interpretation</text>
+    <text x="875" y="730" class="body">The benchmark rewards preserving the failure</text>
+    <text x="875" y="765" class="body">evidence while discarding the surrounding noise.</text>
+    <text x="875" y="815" class="body">This is typical of tool-output pruning: the useful</text>
+    <text x="875" y="850" class="body">block is short, local, and should remain verbatim.</text>
+  </g>
+</svg>
