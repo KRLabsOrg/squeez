@@ -77,11 +77,13 @@ This is **87% compression** while preserving the only part of the test run that 
 python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
 ```
 
-Recent pruning systems operate on different units in different settings. **LLMLingua** and **LongLLMLingua** compress prompts at the token or prompt-block level ([Jiang et al., 2023](https://aclanthology.org/2023.emnlp-main.825/); [Jiang et al., 2024](https://aclanthology.org/2024.acl-long.91/)). **EXIT** performs extractive compression over retrieved documents for downstream question answering ([Hwang et al., 2025](https://aclanthology.org/2025.findings-acl.253/)). **Provence** formulates context pruning as sequence labeling and combines pruning with reranking for retrieval-augmented generation ([Chirkova et al., 2025](https://arxiv.org/abs/2501.16214)). **Zilliz Semantic Highlight** adapts this line to lightweight semantic highlighting by scoring token and sentence relevance in retrieved text ([model card](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1)). **SWE-Pruner** is closer to our setting, but focuses on repository code pruning rather than mixed single-tool observations ([Wang et al., 2026](https://arxiv.org/abs/2601.16746)). Tool output is different: it mixes code, logs, shell traces, stack frames, JSON payloads, and Git metadata in unpredictable ways. That is the gap Squeez targets.
+Existing pruning work points in the right direction, but it usually operates on different units. **LLMLingua** and **LongLLMLingua** compress prompts at the token or prompt-block level ([Jiang et al., 2023](https://aclanthology.org/2023.emnlp-main.825/); [Jiang et al., 2024](https://aclanthology.org/2024.acl-long.91/)). **EXIT** and **Provence** move closer to our setting by performing extractive compression over retrieved text for downstream question answering or retrieval-augmented generation ([Hwang et al., 2025](https://aclanthology.org/2025.findings-acl.253/); [Chirkova et al., 2025](https://arxiv.org/abs/2501.16214)). **Zilliz Semantic Highlight** adapts this line to semantic highlighting over retrieved passages ([model card](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1)). **SWE-Pruner** is the nearest coding baseline, but it emphasizes repository code pruning rather than pruning a single mixed-format observation ([Wang et al., 2026](https://arxiv.org/abs/2601.16746)).
+
+Tool output is a different object. A single observation may mix code, logs, shell traces, stack frames, JSON payloads, and Git metadata, and the relevant evidence may be a failure block, a short code region, one commit entry, or nothing at all. That is the gap Squeez targets.
 
 ## The task
 
-We formulate this as **task-conditioned tool-output pruning**: given a focused query $q$ and one raw tool observation $o$, return the smallest verbatim evidence block that the agent should inspect next.
+The benchmark therefore focuses on a narrower problem than end-to-end bug solving. We formulate it as **task-conditioned tool-output pruning**: given a focused query $q$ and one raw tool observation $o$, return the smallest verbatim evidence block that the agent should inspect next.
 
 This is intentionally narrower than bug solving. The model is not asked to infer the correct patch from one observation. It is asked to preserve the relevant evidence while removing the rest. The output must be a verbatim subset of the input — no rewriting, no summarization.
 
@@ -93,37 +95,45 @@ The following diagram shows the full pipeline from raw tool output through groun
   <img src="./assets/squeez_overview.svg" alt="Squeez pipeline: from raw tool output through grounded span annotation to generative model and evaluation" width="920">
 </p>
 
-## The benchmark
+## Building the benchmark
 
-The released benchmark contains **11,477** examples: **9,205** SWE-derived examples built from repository interactions on [SWE-bench](https://openreview.net/forum?id=VTF8yNQM66), and **2,272** synthetic examples (1,697 positives and 575 explicit negatives). The synthetic portion extends coverage beyond the Python-heavy SWE setting to TypeScript, Go, Rust, Java, Docker, Terraform, and Kubernetes workflows. In total, the benchmark covers **27 tool types**, including `read_file`, `grep`, `git_log`, `git_blame`, `git_diff`, `ls`, `curl`, `python`, `test_output`, `build_output`, `pip_install`, `type_check`, `kubectl`, `docker_build`, `cargo_build`, `terraform`, and others.
+Once the task is stated this way, the main question becomes how to build a realistic benchmark for it. The benchmark is built from two sources. The first is [SWE-bench](https://openreview.net/forum?id=VTF8yNQM66), a benchmark of real GitHub issue-resolution tasks over real repositories. We do **not** use it as another end-to-end patch-generation benchmark. Instead, we use it as a source of realistic issue contexts, repository snapshots, and tool observations. Starting from cloned SWE-bench repositories, we collect or reuse **10,713** raw tool observations: file reads, grep hits, Git history, shell output, Python exceptions, test results, package-manager traces, and build logs.
 
-Labels are produced with `openai/gpt-oss-120b`. For each raw tool output, the teacher writes a focused extraction query and selects one or more contiguous answer spans. The released labels are mapped back onto the original raw text, so every target remains a verbatim subset of the source. For the generative model, these gold spans are linearized as XML-wrapped extracted text.
+The second source is synthetic multi-ecosystem tool output. Its purpose is to extend the benchmark beyond the Python-heavy SWE distribution. We begin from **2,039** raw synthetic observations covering TypeScript, Go, Rust, Java, Docker, Terraform, Kubernetes, and related workflows. This is also where we construct explicit negative examples, i.e. cases where the correct pruning decision is to return nothing.
 
-We manually curated the held-out test set. Starting from 729 candidate test examples, we removed 111 cases (15.2%) that were near-duplicates, trivial 1-2 line outputs, overly broad spans, or incorrect annotations. The final test set contains **618** manually reviewed examples.
+Each released example is built in two stages with `openai/gpt-oss-120b`. First, the teacher writes a focused, tool-aware extraction query for one observation. This query is narrower than the full issue description: it captures the local information need the agent has at that moment, such as finding the failure block, the relevant code region, or the commit entry that matters for the next debugging step. Second, the teacher selects the smallest contiguous span or set of spans that answers that query. During annotation the teacher sees a numbered rendering of the output for stable span selection, but the final labels are always mapped back onto the original raw text, so every target remains a verbatim subset of the source.
 
-The table below shows the largest tool families. The benchmark mixes very short observations (e.g., `python` errors averaging 59 tokens) with long, structurally noisy ones (e.g., `type_check` outputs averaging 3,428 tokens). This variation is one reason simple truncation and lexical retrieval behave poorly: the relevant evidence does not follow one structural pattern, and it may occur at the beginning, middle, or end of the observation.
+That construction step is what turns long tool output into a pruning benchmark rather than a summarization prompt. Positive examples whose query cannot be supported by the observation are dropped instead of kept as accidental empty outputs. Explicit negatives are created separately in the synthetic portion by deliberately mismatching queries and outputs. For the released generative model, gold spans are linearized as XML-wrapped extracted text.
 
-| Tool family | Rows | Avg. input tokens | Avg. gold tokens |
+The released benchmark contains **11,477** examples in total: **9,205** SWE-derived examples, **1,697** synthetic positives, and **575** synthetic negatives. We split SWE-derived examples by repository and synthetic examples by tool family. For the held-out split, we manually reviewed **729** candidate test examples and removed **111** (15.2%) that were near-duplicates, trivial 1-2 line outputs, overly broad spans, or incorrect annotations. The final test set contains **618** manually reviewed examples.
+
+The result is a benchmark that is heterogeneous both in source and in observation structure. The table below shows the largest tool families with their average input and gold span lengths. `python` errors average 60 tokens while `type_check` outputs average 3,400 and `git_blame` over 4,200. This variation is one reason simple truncation and lexical retrieval behave poorly: the relevant evidence does not follow one structural pattern, and it may occur at the beginning, middle, or end of the observation.
+
+| Tool family | Rows | Avg. input | Avg. gold |
 |---|---:|---:|---:|
-| `read_file` | 3760 | 1680 | 84 |
-| `grep` | 1320 | 785 | 19 |
+| `read_file` | 3768 | 1677 | 84 |
+| `grep` | 1330 | 779 | 19 |
 | `git_log` | 720 | 161 | 11 |
-| `python` | 670 | 59 | 27 |
-| `curl` | 488 | 726 | 68 |
+| `python` | 698 | 60 | 28 |
+| `test_output` | 546 | 56 | 23 |
+| `curl` | 493 | 723 | 68 |
 | `pip_install` | 441 | 438 | 79 |
-| `type_check` | 316 | 3428 | 39 |
+| `ls` | 347 | 235 | 20 |
+| `type_check` | 317 | 3418 | 39 |
+| `git_blame` | 291 | 4210 | 139 |
+| `npm_build` | 230 | 719 | 46 |
 | `tsc` | 229 | 1444 | 56 |
-| other 19 tools | 3533 | 926 | 52 |
+| remaining tools | 2567 | 542 | 48 |
 
 ## Model and training
 
-The released model, **Squeez-2B**, is [Qwen 3.5 2B](https://arxiv.org/abs/2505.09388) fine-tuned with LoRA ([Hu et al., 2022](https://openreview.net/forum?id=nZeVKeeFYf9); [Dettmers et al., 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract-Conference.html)). We chose Qwen 3.5 2B because it offers a strong trade-off between base capability, fine-tuning cost, and deployment simplicity. The point here is not to maximize zero-shot reasoning depth with the largest possible generator, but to learn a narrow supervised extraction policy that can run cheaply inside agent systems. A 2B open model is therefore a better fit for the intended use case than a much larger decoder, while still remaining strong enough to benefit from task-specific supervision.
+With the benchmark in place, we train one compact generative model rather than a large model zoo. The released model, **Squeez-2B**, is [Qwen 3.5 2B](https://arxiv.org/abs/2505.09388) fine-tuned with LoRA ([Hu et al., 2022](https://openreview.net/forum?id=nZeVKeeFYf9); [Dettmers et al., 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract-Conference.html)). We chose Qwen 3.5 2B because it offers a strong trade-off between base capability, fine-tuning cost, and deployment simplicity. The point here is not to maximize zero-shot reasoning depth with the largest possible generator, but to learn a narrow supervised extraction policy that can run cheaply inside agent systems. A 2B open model is therefore a better fit for the intended use case than a much larger decoder, while still remaining strong enough to benefit from task-specific supervision.
 
 The model receives a focused extraction query and the raw tool observation, and is trained to emit the extracted evidence block wrapped in `<relevant_lines>` tags. Training uses the Unsloth stack with LoRA, maximum sequence length 20,000, effective batch size 32 (8 per device, 4 gradient accumulation), learning rate 2e-4, 3 epochs, warmup 0.05, weight decay 0.01. The final model is merged and served through vLLM.
 
 ## Results
 
-We compare Squeez-2B against three zero-shot generative baselines (Qwen 3.5 35B A3B, Kimi K2, and the untrained Qwen 3.5 2B base) and four heuristics (BM25, First-N, Last-N, Random) that each keep approximately 10% of input lines. Evaluation focuses on **recall under strong compression**, with F1 as the summary metric. Dropping relevant evidence is usually more harmful than keeping a slightly larger block, which is why recall matters more than precision for this task.
+We then compare Squeez-2B against three zero-shot generative baselines (Qwen 3.5 35B A3B, Kimi K2, and the untrained Qwen 3.5 2B base) and four heuristics (BM25, First-N, Last-N, Random) that each keep approximately 10% of input lines. Evaluation focuses on **recall under strong compression**, with F1 as the summary metric. Dropping relevant evidence is usually more harmful than keeping a slightly larger block, which is why recall matters more than precision for this task.
 
 | Model | Recall | F1 | Compression |
 |---|---:|---:|---:|
@@ -152,7 +162,7 @@ The recall-compression trade-off across all models is shown below. Squeez-2B occ
 
 ## What the model learns
 
-The fine-tuned model appears to learn tool-specific pruning regularities. In `grep` and `git_log` outputs, it returns the single relevant hit rather than a broader keyword-matching neighborhood. In `test_output`, `build_output`, and package-manager logs, it keeps the actual failure block instead of surrounding boilerplate. In `read_file`, it retains the smallest contiguous code block that answers the query rather than an entire surrounding function or class.
+The aggregate numbers are only part of the story. Qualitatively, the fine-tuned model appears to learn tool-specific pruning regularities. In `grep` and `git_log` outputs, it returns the single relevant hit rather than a broader keyword-matching neighborhood. In `test_output`, `build_output`, and package-manager logs, it keeps the actual failure block instead of surrounding boilerplate. In `read_file`, it retains the smallest contiguous code block that answers the query rather than an entire surrounding function or class.
 
 The following example shows a `kubectl` observation where the relevant evidence is a two-line block buried in 250 lines of pod description. The model learns to extract just the OOMKilled reason and exit code:
 
@@ -164,7 +174,7 @@ The strongest remaining failures are semantically adjacent but incorrect selecti
 
 ## Using Squeez in your agent
 
-Squeez is designed as a drop-in preprocessing step for existing coding agents. It does not require changes to the agent's planner, tool API, or interaction loop.
+These results matter because the model is easy to insert into existing agent loops. Squeez is designed as a drop-in preprocessing step for existing coding agents. It does not require changes to the agent's planner, tool API, or interaction loop.
 
 As a CLI pipe:
 
@@ -213,6 +223,8 @@ We think it deserves to be studied as a first-class learning problem. Squeez iso
 - Jiang, H., et al. (2023). *LLMLingua: Compressing Prompts for Accelerated Inference of Large Language Models*. [EMNLP](https://aclanthology.org/2023.emnlp-main.825/)
 - Jiang, H., et al. (2024). *LongLLMLingua: Accelerating and Enhancing LLMs in Long Context Scenarios via Prompt Compression*. [ACL](https://aclanthology.org/2024.acl-long.91/)
 - Hwang, T., et al. (2025). *EXIT: Context-Aware Extractive Compression for Enhancing Retrieval-Augmented Generation*. [Findings of ACL](https://aclanthology.org/2025.findings-acl.253/)
+- Chirkova, N., et al. (2025). *Provence: Efficient and Robust Context Pruning for Retrieval-Augmented Generation*. [arXiv](https://arxiv.org/abs/2501.16214)
+- Zilliz. (2025). *Semantic Highlight Bilingual v1*. [Model card](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1)
 - Kerboua, I., et al. (2025). *FocusAgent: Simple Yet Effective Ways of Trimming the Large Context of Web Agents*. [arXiv](https://arxiv.org/abs/2510.03204)
 - Wang, Y., et al. (2026). *SWE-Pruner: Self-Adaptive Context Pruning for Coding Agents*. [arXiv](https://arxiv.org/abs/2601.16746)
 - Jimenez, C. E., et al. (2024). *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?* [ICLR](https://openreview.net/forum?id=VTF8yNQM66)
