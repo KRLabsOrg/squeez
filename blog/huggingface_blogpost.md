@@ -14,21 +14,21 @@ license: "apache-2.0"
   <img src="./assets/squeez_mascot.png" alt="Squeez mascot" width="180">
 </p>
 
-We trained and open-sourced **Squeez-2B**, a small model that prunes tool output for coding agents. It keeps the lines that matter and drops the rest, achieving 0.86 recall at 91.5% compression. The model is a LoRA-tuned Qwen 3.5 2B, served via vLLM or used as a CLI pipe.
+We trained and open-sourced **Squeez-2B**, a compact model for pruning tool output in coding agents. Given a focused query and one raw tool observation, it returns the smallest verbatim evidence block that the agent should inspect next. On our held-out benchmark it reaches **0.862 recall at 91.5% compression**, outperforming a zero-shot **Qwen 3.5 35B A3B** baseline by **11.3 recall points** while operating at essentially the same compression level.
 
-**Release:**
+The release consists of three parts:
 
-- Model: [KRLabsOrg/squeez-2b](https://huggingface.co/KRLabsOrg/squeez-2b) (Apache 2.0)
+- Model: [KRLabsOrg/squeez-2b](https://huggingface.co/KRLabsOrg/squeez-2b)
 - Dataset: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
-- Code + CLI: [github.com/KRLabsOrg/squeez](https://github.com/KRLabsOrg/squeez)
+- Code and CLI: [github.com/KRLabsOrg/squeez](https://github.com/KRLabsOrg/squeez)
 
-In this post we share our approach: what problem we are solving, how we built the benchmark, and what works.
+This post describes the problem, explains how we built a benchmark for it, and shows that dedicated supervision works substantially better than larger zero-shot models or simple retrieval heuristics.
 
-## The Problem: Agents Waste Most of Their Context on Noise
+## The Problem
 
-Coding agents such as Claude Code and Codex spend much of their time reading tool output. When an agent runs `pytest`, `grep`, `git log`, or `kubectl`, the result is often hundreds of lines. But only a handful of those lines are relevant for the next step. The rest is boilerplate: passing tests, headers, unchanged files, timestamps.
+Coding agents such as Claude Code and Codex spend much of their time reading tool output. When an agent runs `pytest`, `grep`, `git log`, `kubectl`, or `pip install`, the result is often dozens or hundreds of lines long. Only a small fraction of those lines matter for the next step. The rest is headers, passing tests, repeated metadata, timestamps, unchanged context, or structurally similar but irrelevant matches. In practice, this means that a substantial part of the context budget is consumed not by reasoning, but by re-reading noisy observations.
 
-Here is what that looks like in practice. An agent runs `pytest` and gets 45 lines back. Only 6 matter:
+This is easiest to see on test output. An agent runs `pytest`, receives a moderately long result, and only one failure block matters:
 
 **Raw tool output (45 lines):**
 
@@ -75,63 +75,39 @@ E       Expected: new token within 30m window
 E       Got: rejection after 15m (timeout changed?)
 ```
 
-That is **87% compression** while keeping everything the agent needs for the next debugging step. The command is:
+That is **87% compression** while preserving the only part of the observation that matters for the next debugging step:
 
 ```bash
 python -m pytest tests/ -v 2>&1 | squeez "find the test failure related to authentication"
 ```
 
-This problem exists across all tool types: `grep` results buried in hundreds of matches, `git log` with dozens of commits where only one matters, `kubectl describe` with 250 lines of pod metadata when the agent needs the two-line OOMKilled block. The common thread is that the useful evidence is a small region inside a much larger observation.
+The same pattern appears in many other tools. `grep` may return a long list of nearby lexical matches although only one file is relevant. `git log` may show a long history where one commit matters. `kubectl describe` may contain hundreds of lines of pod state, yet the evidence is two lines saying `OOMKilled` and `Exit Code: 137`. `read_file` may return an entire module even though the agent only needs one code block. The common structure is always the same: a small evidence block embedded in a much larger observation.
 
-## Why Existing Pruning Tools Don't Solve This
+Existing pruning systems point in the right direction, but usually operate on different units. **LLMLingua** and **LongLLMLingua** compress prompts at the token or prompt-block level ([Jiang et al., 2023](https://aclanthology.org/2023.emnlp-main.825/); [Jiang et al., 2024](https://aclanthology.org/2024.acl-long.91/)). **EXIT** and **Provence** perform extractive compression over retrieved text for downstream question answering or retrieval-augmented generation ([Hwang et al., 2025](https://aclanthology.org/2025.findings-acl.253/); [Chirkova et al., 2025](https://arxiv.org/abs/2501.16214)). **Zilliz Semantic Highlight** adapts this line to semantic highlighting over retrieved passages ([model card](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1)). **SWE-Pruner** is the closest coding baseline, but it focuses on pruning repository code context rather than a single mixed-format tool observation ([Wang et al., 2026](https://arxiv.org/abs/2601.16746)).
 
-We looked at several existing systems before building our own.
+Tool output is a different object. It is not well-formed prose, and it is not always source code. A single observation may mix code, logs, shell traces, stack frames, JSON payloads, and Git metadata. The relevant unit may be a failure block, a short function body, a commit entry, a package conflict, or nothing at all. That is the gap Squeez targets.
 
-**LLMLingua / LongLLMLingua** ([Jiang et al., 2023](https://aclanthology.org/2023.emnlp-main.825/); [Jiang et al., 2024](https://aclanthology.org/2024.acl-long.91/)) compress prompts by removing tokens or prompt blocks. They work at the token level on natural language. Tool output is different: a single removed token in a stack trace can break the meaning of the entire block.
+## The Task and the Benchmark
 
-**EXIT** ([Hwang et al., 2025](https://aclanthology.org/2025.findings-acl.253/)) performs extractive compression on retrieved documents for question answering. It assumes well-formed prose with sentence boundaries. Tool output does not have sentence boundaries. A pytest traceback, a `git blame` output, and a Terraform plan are not prose.
+We formulate the problem as **task-conditioned tool-output pruning**: given a focused query and one raw tool observation, return the smallest verbatim evidence block that the agent should inspect next. The model is not asked to solve the full bug from one observation. It is asked to preserve the relevant evidence and remove the rest.
 
-**Provence** ([Chirkova et al., 2025](https://arxiv.org/abs/2501.16214)) and **Zilliz Semantic Highlight** ([model card](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1)) push context pruning further with sequence labeling and token-level scoring. They achieve strong results on retrieved documents. But they are designed for passage text, not the mixed format of tool output where code, logs, stack traces, metadata, and structured output are interleaved in a single artifact.
+Two properties of the task matter. First, the output is **verbatim**. We do not want paraphrased summaries of stack traces, imports, versions, exit codes, or code blocks. Tool output often contains details that should remain exact. Second, the query is **task-conditioned** but narrower than the full issue description. It expresses the local information need the agent has at that moment: find the failure block, the relevant code region, or the commit that likely introduced the behavior.
 
-**SWE-Pruner** ([Wang et al., 2026](https://arxiv.org/abs/2601.16746)) is the closest to our setting. It targets coding agents specifically. However, it focuses on pruning repository code context rather than individual tool observations. An agent's tool output is not just source code: it includes shell output, build logs, test results, Git history, and package-manager traces.
-
-No existing system handles the full range of mixed-format tool output that coding agents produce. That is the gap we set out to fill.
-
-## The Task
-
-We formulate the problem as follows: given a focused query and one raw tool observation, return the smallest verbatim evidence block that the agent should inspect next. The output is therefore not a summary or a rewrite. It is a subset of the source lines. The query is also not the full issue description, but a narrower local need such as finding the failure block, the relevant code region, or the commit entry that matters for the next debugging step.
-
-The pipeline from raw tool output to trained model is shown below:
+The overall pipeline is shown below:
 
 <p align="center">
   <img src="./assets/squeez_overview.svg" alt="Squeez pipeline: from raw tool output through span annotation to generative model" width="920">
 </p>
 
-## Building the Benchmark
+The benchmark is built from two sources. The first is [SWE-bench](https://openreview.net/forum?id=VTF8yNQM66), which provides real GitHub issue-resolution tasks over real repositories. We do not use SWE-bench as another patch-generation benchmark. Instead, we use it as a source of realistic repository snapshots, issue contexts, and raw tool observations. Starting from cloned SWE-bench repositories, we collected or reused **10,713** raw tool observations, including file reads, grep hits, Git history, shell output, test results, Python exceptions, and package-manager traces.
 
-### Data Sources
+The second source is synthetic multi-ecosystem tool output. Its role is to broaden coverage where SWE-bench is thin, especially outside the Python-heavy distribution of repository-level issue fixing. Starting from **2,039** raw synthetic observations, we add examples from TypeScript, Go, Rust, Java, Docker, Terraform, and Kubernetes workflows, and we also construct explicit negatives where the correct pruning decision is to return nothing.
 
-The benchmark is built from two sources.
+Each released example is built with a two-stage teacher-labeling pipeline using `openai/gpt-oss-120b`. First, the teacher writes a focused extraction query for one observation. Second, it selects the smallest contiguous span or set of spans that answers that query. The teacher sees a numbered rendering of the output for stable span selection, but the released labels are always mapped back onto the original raw text. This is a deliberate design choice: the benchmark stores a pruning decision over the source observation, not a free-form textual explanation of it. Positive examples whose query cannot be supported by the observation are dropped rather than retained as accidental empty outputs. Explicit negatives are created separately in the synthetic portion.
 
-The first is [SWE-bench](https://openreview.net/forum?id=VTF8yNQM66), a collection of real GitHub issue-resolution tasks. We do not use it as a patch-generation benchmark. Instead, we use it as a source of realistic repository snapshots and tool observations. Starting from cloned SWE-bench repositories, we collected **10,713** raw tool observations: file reads, grep hits, Git history, shell output, test results, and package-manager logs.
+The held-out set was manually curated. Starting from **729** candidate test examples, we removed **111** cases (15.2%) that were near-duplicates, trivial 1--2 line outputs, overly broad spans, or incorrect annotations. The final test set contains **618** manually reviewed examples.
 
-The second source is synthetic multi-ecosystem tool output covering TypeScript, Go, Rust, Java, Docker, Terraform, and Kubernetes. Its role is to extend coverage where SWE-bench is thin. We begin from **2,039** raw synthetic observations and also construct explicit negatives (cases where the correct pruning decision is to return nothing).
-
-### Annotation with a Teacher Model
-
-Each example is built in two stages with `openai/gpt-oss-120b` as the teacher. First, the teacher writes a focused extraction query for one observation. This is not the full issue description but a narrower need: "find the failure block," "find the relevant code region," "find the commit entry that matters." Second, the teacher selects the smallest contiguous span that answers that query.
-
-The key design decision: every target is a verbatim subset of the source. The teacher sees a numbered view of the output for stable span selection, but the released labels are mapped back onto the original raw text. This makes it a pruning benchmark, not a summarization benchmark.
-
-### Test Set Curation
-
-We manually curated the held-out test set. Starting from 729 candidates, we removed 111 (15.2%) that were near-duplicates, trivial outputs, overly broad spans, or incorrect annotations. The final test set contains **618** manually reviewed examples.
-
-### Dataset Statistics
-
-The released benchmark contains **11,477** examples: 9,205 SWE-derived, 1,697 synthetic positives, and 575 synthetic negatives, covering **27 tool types**. We split SWE-derived examples by repository and synthetic examples by tool family.
-
-The source breakdown is:
+The released benchmark contains **11,477** examples in total: **9,205** SWE-derived examples, **1,697** synthetic positives, and **575** synthetic negatives. SWE-derived examples are split by repository and synthetic examples by tool family.
 
 | Source | Raw inputs | Released rows |
 |---|---:|---:|
@@ -140,7 +116,7 @@ The source breakdown is:
 | Synthetic negatives | — | 575 |
 | Total | 12,752 | 11,477 |
 
-The table below shows the largest tool families. The distribution is deliberately varied: `python` errors average 60 tokens while `type_check` outputs average 3,400 and `git_blame` over 4,200. This is one reason heuristic baselines fail: the relevant evidence does not follow one structural pattern.
+The benchmark covers **27** tool types. The largest families are shown below.
 
 | Tool family | Rows | Avg. input | Avg. gold |
 |---|---:|---:|---:|
@@ -155,15 +131,19 @@ The table below shows the largest tool families. The distribution is deliberatel
 | `git_blame` | 291 | 4210 | 139 |
 | remaining tools | 3873 | 688 | 47 |
 
-## Model and Training
+The distribution is intentionally heterogeneous. `python` and `test_output` rows are short; `read_file`, `type_check`, and `git_blame` can be extremely long. This variation is one reason simple truncation and lexical retrieval perform poorly: the useful evidence does not follow one structural pattern, and it may occur at the beginning, middle, or end of the observation.
 
-We chose **Qwen 3.5 2B** ([Qwen3 Technical Report](https://arxiv.org/abs/2505.09388)) as the base model. The goal is not to maximize zero-shot reasoning with the largest possible model, but to learn a narrow extraction policy that runs cheaply inside agent systems. A 2B model is a good fit: strong enough to benefit from fine-tuning, small enough to serve on a single GPU.
+## Training a Small Model for a Narrow Task
 
-We fine-tuned with **LoRA** ([Hu et al., 2022](https://openreview.net/forum?id=nZeVKeeFYf9); [Dettmers et al., 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract-Conference.html)) using the **Unsloth** stack. The model receives a focused query and a raw tool observation, and is trained to emit the extracted evidence wrapped in `<relevant_lines>` tags. Training runs for 3 epochs with effective batch size 32 and max sequence length 20,000. The final model is merged and served through **vLLM**.
+We chose **Qwen 3.5 2B** as the base model ([Qwen3 Technical Report](https://arxiv.org/abs/2505.09388)). The choice was deliberate. The goal here is not to maximize zero-shot reasoning with the largest possible decoder. It is to learn a narrow supervised extraction policy that can run cheaply inside an agent loop. A dense 2B model is large enough to benefit from supervision, but still small enough to be practical for local serving and repeated tool use.
+
+We fine-tuned the model with **LoRA** ([Hu et al., 2022](https://openreview.net/forum?id=nZeVKeeFYf9); [Dettmers et al., 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract-Conference.html)) using the **Unsloth** stack. The model receives a focused extraction query and the raw tool observation, and is trained to emit the extracted evidence wrapped in `<relevant_lines>` tags. In other words, the supervision target is not a classification label and not a summary. It is the exact evidence block the model should keep.
+
+Training uses max sequence length 20,000, effective batch size 32, learning rate 2e-4, 3 epochs, warmup 0.05, weight decay 0.01. After training, we merge the LoRA adapter into the base model and serve the merged checkpoint through **vLLM**.
 
 ## Results
 
-We compared Squeez-2B against three zero-shot models and four heuristic baselines. The heuristic baselines keep approximately 10% of input lines to match the typical gold ratio.
+We compare Squeez-2B against three zero-shot generative baselines and four heuristic baselines. The heuristic baselines keep roughly 10% of the input lines to operate at a compression level similar to the gold extractions. The main metrics are **recall**, **F1**, and **compression**. Recall matters most because dropping relevant evidence is usually more harmful than keeping a slightly larger block.
 
 | Model | Recall | F1 | Compression |
 |---|---:|---:|---:|
@@ -176,39 +156,27 @@ We compared Squeez-2B against three zero-shot models and four heuristic baseline
 | Random (10%) | 0.1009 | 0.1966 | 0.9067 |
 | Last-N (10%) | 0.0503 | 0.1393 | 0.9130 |
 
-**Task-specific training matters.** A fine-tuned 2B model outperforms the 18x larger Qwen 3.5 35B A3B by 11.3 recall points at essentially the same compression level. The untrained 2B base, given the same prompt, reaches only 0.53 recall. Fine-tuning nearly doubles it.
+Three results matter most. First, **task-specific training matters**: a fine-tuned 2B model outperforms the 18x larger Qwen 3.5 35B A3B by **11.3 recall points** at almost the same compression level. Second, **heuristics are not sufficient**: BM25 reaches only **0.22 recall**, because lexical overlap is a poor proxy for relevance in stack traces, logs, and mixed-format observations. Third, **aggressive compression alone is not enough**: Kimi K2 removes the largest fraction of tokens, but pays for that compression with a large recall drop.
 
-**Heuristics are not sufficient.** BM25 reaches only 0.22 recall on tool output. Relevant lines may appear at the end of a traceback, in the middle of a build log, or inside a short code block with no lexical overlap with the query.
-
-**Aggressive compression alone is not enough.** Kimi K2 removes the most tokens (94.3%) but pays for it in recall (0.53 vs 0.86).
-
-The recall-compression trade-off is shown below. Squeez-2B occupies the upper-left: high recall with strong compression.
+The recall-compression trade-off is shown below. Squeez-2B occupies the upper-left region: high recall with strong compression.
 
 <p align="center">
   <img src="./assets/squeez_results_chart.svg" alt="Recall vs compression across all models" width="920">
 </p>
 
-## What the Model Learns
+The aggregate numbers are only part of the story. Qualitatively, the model appears to learn tool-specific pruning regularities. In `grep` and `git_log`, it tends to return the single relevant hit rather than a broader lexical neighborhood. In `test_output`, `build_output`, and package-manager logs, it keeps the failure block and drops surrounding boilerplate. In `read_file`, it often retains the smallest contiguous code block that answers the query instead of an entire surrounding function or class.
 
-The model appears to learn tool-specific regularities:
-
-- In `grep` and `git_log`, it returns the single relevant hit instead of a broader keyword neighborhood
-- In `test_output` and `build_output`, it keeps the failure block and drops the boilerplate
-- In `read_file`, it retains the smallest contiguous code block that answers the query
-
-Here is an example from a `kubectl` observation. The full output is 250 lines of pod description. The relevant evidence is two lines:
+The following `kubectl` example illustrates the intended use case. The full observation contains 250 lines of pod description; the relevant evidence is a two-line block reporting `OOMKilled` and the exit code.
 
 <p align="center">
   <img src="./assets/squeez_qualitative_example.svg" alt="kubectl example: 2 relevant lines from 250" width="920">
 </p>
 
-The strongest remaining failures are semantically adjacent but wrong: choosing the wrong file from an `ls` listing, or returning a related commit that touches the same module but does not answer the query.
+The strongest remaining failures are usually semantically adjacent but incorrect selections: choosing the wrong file from an `ls` listing, or returning a related commit that touches the same module without directly answering the query.
 
-## Using Squeez in Your Agent
+## Using Squeez
 
-Squeez is a preprocessing step. It does not change the agent's planner, tool API, or interaction loop.
-
-As a CLI pipe:
+Operationally, Squeez is meant to be a preprocessing step rather than a new agent architecture. It does not require changes to the planner, tool API, or interaction loop. You can pipe tool output through the CLI:
 
 ```bash
 pytest -q 2>&1 | squeez "find the failure block"
@@ -216,7 +184,7 @@ git log --oneline -50 | squeez "find the commit that changed CSRF handling"
 cat src/auth/middleware.py | squeez "find the referer validation logic"
 ```
 
-With vLLM for production:
+Or you can serve the model with vLLM for higher-throughput settings:
 
 ```bash
 vllm serve KRLabsOrg/squeez-2b --dtype bfloat16 --max-model-len 16384
@@ -224,18 +192,20 @@ export SQUEEZ_SERVER_URL=http://localhost:8000/v1
 pytest -q 2>&1 | squeez "find the failure block"
 ```
 
-To add it to **Claude Code**, put this in your `CLAUDE.md`:
+For systems such as Claude Code, a minimal `CLAUDE.md` instruction is enough:
 
-```
+```text
 When you invoke a shell command, pipe it through `squeez` and describe what you need.
 Examples:
 - `bun test 2>&1 | squeez "did the tests pass?"`
 - `git log --oneline -50 | squeez "find the commit that broke CSRF"`
 ```
 
-The same pattern works with Codex, OpenHands, SWE-agent, or any agent that accepts system-level instructions.
+The same pattern works with Codex and other agent setups that accept system-level instructions or shell wrappers.
 
-Our contribution is intentionally narrow. We do not propose a new general-purpose prompt compressor, and we do not claim to solve end-to-end software engineering. Instead, we isolate one recurring bottleneck in coding agents: deciding what to keep from a single tool observation before the next reasoning step. The benchmark, the released model, and the results all point in the same direction: this narrow problem is learnable, practically useful, and not handled well by simple heuristics or larger zero-shot models alone.
+## Takeaway
+
+One recurring bottleneck in coding agents is deciding what to keep from a single tool observation. Our results suggest this is learnable, practically useful, and not handled well by simple heuristics or larger zero-shot models alone. Squeez is our attempt at a focused solution: a narrow model for a narrow problem.
 
 ## Resources
 
@@ -256,11 +226,4 @@ Our contribution is intentionally narrow. We do not propose a new general-purpos
 - Kerboua, I., et al. (2025). *FocusAgent: Simple Yet Effective Ways of Trimming the Large Context of Web Agents*. [arXiv](https://arxiv.org/abs/2510.03204)
 - Wang, Y., et al. (2026). *SWE-Pruner: Self-Adaptive Context Pruning for Coding Agents*. [arXiv](https://arxiv.org/abs/2601.16746)
 - Jimenez, C. E., et al. (2024). *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?* [ICLR](https://openreview.net/forum?id=VTF8yNQM66)
-- Yang, J., et al. (2024). *SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering*. [NeurIPS](https://arxiv.org/abs/2405.15793)
-- Wang, X., et al. (2024). *OpenHands: An Open Platform for AI Software Developers as Generalist Agents*. [arXiv](https://arxiv.org/abs/2407.16741)
-- See, A., Liu, P. J., and Manning, C. D. (2017). *Get To The Point: Summarization with Pointer-Generator Networks*. [ACL](https://aclanthology.org/P17-1099/)
-- Liu, Y. and Lapata, M. (2019). *Text Summarization with Pretrained Encoders*. [EMNLP](https://aclanthology.org/D19-1387/)
-- Rajpurkar, P., et al. (2016). *SQuAD: 100,000+ Questions for Machine Comprehension of Text*. [EMNLP](https://aclanthology.org/D16-1264/)
-- Thorne, J., et al. (2018). *FEVER: A Large-scale Dataset for Fact Extraction and VERification*. [NAACL](https://aclanthology.org/N18-1074/)
-- Yang, Z., et al. (2018). *HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering*. [EMNLP](https://aclanthology.org/D18-1259/)
 - Yang, A., et al. (2025). *Qwen3 Technical Report*. [arXiv](https://arxiv.org/abs/2505.09388)
