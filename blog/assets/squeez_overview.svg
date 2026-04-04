@@ -75,7 +75,7 @@
 
     <!-- Tool count -->
     <rect x="118" y="666" width="170" height="40" rx="14" fill="#e8ecff"/>
-    <text x="142" y="692" class="small">14 tool types</text>
+    <text x="142" y="692" class="small">27 tool types</text>
   </g>
 
   <!-- Arrow 1→2 -->
