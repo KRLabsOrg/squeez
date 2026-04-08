@@ -1,7 +1,7 @@
 # Squeez: Task-Conditioned Tool-Output Pruning for Coding Agents
 
 <p align="center">
-  <img src="assets/squeez_mascot.png" alt="Squeez mascot" width="180">
+  <img src="https://raw.githubusercontent.com/KRLabsOrg/squeez/main/blog/assets/squeez_mascot.png" alt="Squeez mascot" width="180">
 </p>
 
 We trained and open-sourced **Squeez-2B**, a compact model for pruning tool output in coding agents. Given a focused query and one raw tool observation, it returns the smallest verbatim evidence block that the agent should inspect next. On our held-out benchmark it reaches **0.86 recall at 92% compression**, outperforming a zero-shot **Qwen 3.5 35B A3B** baseline by **11 recall points** at essentially the same compression level. The model, dataset, and code are released on [Hugging Face](https://huggingface.co/KRLabsOrg/squeez-2b), [the dataset hub](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench), and [GitHub](https://github.com/KRLabsOrg/squeez).
@@ -80,7 +80,7 @@ Two properties of the task matter. First, the output is **verbatim**. We do not 
 The overall pipeline is shown below:
 
 <p align="center">
-  <img src="assets/squeez_overview.svg" alt="Squeez pipeline: from raw tool output through span annotation to generative model" width="920">
+  <img src="https://raw.githubusercontent.com/KRLabsOrg/squeez/main/blog/assets/squeez_overview.svg" alt="Squeez pipeline: from raw tool output through span annotation to generative model" width="920">
 </p>
 
 The benchmark is built from two sources. The first is [SWE-bench](https://openreview.net/forum?id=VTF8yNQM66), which provides real GitHub issue-resolution tasks over real repositories. We clone repository snapshots and execute 14 tool types against them — file reads, grep, Git log and blame, test runners, linters, type checkers, package installation, curl, and others — collecting **10,713** raw observations that reflect the kind of output a coding agent encounters during issue resolution.
@@ -147,7 +147,7 @@ Three results matter most. First, **task-specific training matters**: a fine-tun
 The recall-compression trade-off is shown below. Squeez-2B occupies the upper-left region: high recall with strong compression.
 
 <p align="center">
-  <img src="assets/squeez_results_chart.svg" alt="Recall vs compression across all models" width="920">
+  <img src="https://raw.githubusercontent.com/KRLabsOrg/squeez/main/blog/assets/squeez_results_chart.svg" alt="Recall vs compression across all models" width="920">
 </p>
 
 The aggregate numbers are only part of the story. Below are four qualitative patterns from the held-out test set.
@@ -196,7 +196,7 @@ Qwen 35B selects a semantically similar but wrong block from a later request. Th
 **The kubectl example** illustrates the intended use case at a glance. The full observation contains 250 lines of pod description; the relevant evidence is a two-line block reporting `OOMKilled` and the exit code.
 
 <p align="center">
-  <img src="assets/squeez_qualitative_example.svg" alt="kubectl example: 2 relevant lines from 250" width="920">
+  <img src="https://raw.githubusercontent.com/KRLabsOrg/squeez/main/blog/assets/squeez_qualitative_example.svg" alt="kubectl example: 2 relevant lines from 250" width="920">
 </p>
 
 **Remaining errors.** The strongest failures of Squeez-2B are semantically adjacent but incorrect selections. In a build log containing both a Dockerfile syntax error and a Python `SyntaxError`, Squeez correctly finds the Dockerfile error but also includes the nearby Python error. Qwen 35B picks *only* the Python error and misses the Dockerfile error entirely. This pattern — correct evidence plus some extra noise — accounts for most of the gap between Squeez's 0.86 recall and its 0.80 precision.

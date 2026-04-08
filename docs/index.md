@@ -26,15 +26,18 @@ From 42 lines of middleware code, Squeez extracts only the block relevant to the
 
 ## Highlights
 
-- **~86% compression** — keeps only the evidence block the agent needs
+- **92% compression, 0.86 recall** — keeps only the evidence block the agent needs
 - **CLI + Python API** — `cat file | squeez "task"` or `ToolOutputExtractor`
-- **Two backends** — vLLM server (fast) or local transformers (no server)
+- **Four backends** — vLLM server, local transformers, encoder, and pooled classifier
 - **Config-driven** — YAML config, env vars, or CLI args
 - **Agent-ready** — works with Claude Code, Codex CLI, OpenCode via instruction files
-- **Open dataset** — grounded canonical rows plus derived Qwen and encoder views
+- **27 tool types** — trained on real SWE-bench workflows and synthetic multi-ecosystem outputs
 
 ## Links
 
+- [Paper (arXiv:2604.04979)](https://arxiv.org/abs/2604.04979)
+- [Model (HuggingFace)](https://huggingface.co/KRLabsOrg/squeez-2b)
+- [Dataset (HuggingFace)](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 - [GitHub](https://github.com/KRLabsOrg/squeez)
 - [PyPI](https://pypi.org/project/squeez/)
-- [HuggingFace Dataset](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
+- [Blog Post](blog.md)
