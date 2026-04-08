@@ -12,10 +12,10 @@
 
 - Tool output pruner for LLM coding agents
 - Pipe any tool output (pytest, grep, git log, npm build, kubectl, ...) through squeez with a task description, get back only the relevant lines
-- Fine-tuned Qwen 3.5 2B, 0.79 F1, ~91% compression
+- Fine-tuned Qwen 3.5 2B, 0.80 F1, 92% compression
 - CLI pipe, Python library, or vLLM server
 
-Existing context pruning tools ([SWE-Pruner](https://github.com/Ayanami1314/swe-pruner), [Zilliz Semantic Highlight](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1), [Provence](https://arxiv.org/abs/2501.16214)) are built for source code or document paragraphs. They don't handle the mixed, unstructured format of tool output (stack traces interleaved with passing tests, grep matches with context lines, build logs with timestamps). Squeez is trained specifically on 14 types of tool output from real SWE-bench workflows.
+Existing context pruning tools ([SWE-Pruner](https://github.com/Ayanami1314/swe-pruner), [Zilliz Semantic Highlight](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1), [Provence](https://arxiv.org/abs/2501.16214)) are built for source code or document paragraphs. They don't handle the mixed, unstructured format of tool output (stack traces interleaved with passing tests, grep matches with context lines, build logs with timestamps). Squeez is trained on 27 types of tool output from real SWE-bench workflows and synthetic multi-ecosystem observations.
 
 ```bash
 pip install squeez
@@ -124,18 +124,18 @@ $ kubectl describe pod api-server-7d4b | squeez "why is the pod failing"
 
 ## Results
 
-Evaluated on 617 held-out test samples from SWE-bench, across 14 tool types:
+Evaluated on 618 manually curated held-out examples spanning 27 tool types:
 
 | Model | Precision | Recall | F1 | Compression |
 |-------|-----------|--------|------|-------------|
-| **Squeez-2B** | **0.8043** | **0.8624** | **0.7895** | 0.9150 |
-| Qwen 3.5 35B A3B (zero-shot) | 0.7402 | 0.7498 | 0.7000 | 0.9177 |
-| Kimi K2 (zero-shot) | 0.6128 | 0.5286 | 0.5344 | 0.9425 |
-| Qwen 3.5 2B (untrained) | 0.4154 | 0.5299 | 0.4075 | 0.8197 |
-| BM25 (10%) | 0.1277 | 0.2172 | 0.1314 | 0.9036 |
-| Random (10%) | 0.0738 | 0.1009 | 0.0697 | 0.9067 |
+| **Squeez-2B** | **0.80** | **0.86** | **0.80** | 0.92 |
+| Qwen 3.5 35B A3B (zero-shot) | 0.74 | 0.75 | 0.73 | 0.92 |
+| Kimi K2 (zero-shot) | 0.61 | 0.53 | 0.68 | 0.94 |
+| Qwen 3.5 2B (untrained) | 0.42 | 0.53 | 0.55 | 0.82 |
+| BM25 (10%) | 0.13 | 0.22 | 0.23 | 0.90 |
+| Random (10%) | 0.07 | 0.10 | 0.20 | 0.91 |
 
-Squeez-2B (2B params) outperforms a 35B MoE model at zero-shot and is 6x better than BM25 on Span F1.
+Squeez-2B (2B params) outperforms the 18x larger Qwen 3.5 35B A3B by 11 recall points at the same compression level.
 
 ## Quick start
 
@@ -305,7 +305,7 @@ squeez eval --extractor-model output/squeez_qwen --eval-file data/test.jsonl
 
 Training data: [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench)
 
-Built from SWE-bench repositories. Each sample has:
+Built from SWE-bench repositories and synthetic multi-ecosystem tool outputs. Each sample has:
 - `query`: a focused extraction request or agent subgoal
 - `tool_output`: raw tool output as seen by the agent
 - `gold_spans`: contiguous spans over the raw output
