@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="860" viewBox="0 0 1600 860" role="img" aria-label="Squeez overview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f5ff"/>
+      <stop offset="55%" stop-color="#f8fbff"/>
+      <stop offset="100%" stop-color="#eef6ff"/>
+    </linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6f63ff"/>
+      <stop offset="100%" stop-color="#4f8cff"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff7a59"/>
+      <stop offset="100%" stop-color="#ffb347"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#23304f" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .title { font: 700 48px Inter, ui-sans-serif, system-ui, sans-serif; fill: #182033; }
+      .subtitle { font: 400 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #57627c; }
+      .step { font: 700 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: white; }
+      .cardh { font: 700 26px Inter, ui-sans-serif, system-ui, sans-serif; fill: #182033; }
+      .body { font: 400 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #49546f; }
+      .mono { font: 500 17px "SFMono-Regular", ui-monospace, Menlo, monospace; fill: #2b3550; }
+      .mono-gray { font: 500 17px "SFMono-Regular", ui-monospace, Menlo, monospace; fill: #9ca3af; }
+      .small { font: 600 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #59657f; letter-spacing: 0.03em; }
+      .card { fill: rgba(255,255,255,0.92); stroke: #dbe2f2; stroke-width: 2; rx: 28; }
+      .chip { fill: #eef2ff; stroke: #cfd7ff; stroke-width: 1.5; rx: 14; }
+      .chip2 { fill: #ebfffb; stroke: #b7efe5; stroke-width: 1.5; rx: 14; }
+      .chip3 { fill: #fff4eb; stroke: #ffd6bf; stroke-width: 1.5; rx: 14; }
+      .arrow { stroke: #9aa5bf; stroke-width: 4; fill: none; marker-end: url(#arrowHead); }
+    </style>
+    <marker id="arrowHead" markerWidth="11" markerHeight="11" refX="9.5" refY="5.5" orient="auto">
+      <path d="M0,0 L11,5.5 L0,11 z" fill="#9aa5bf"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="860" fill="url(#bg)"/>
+  <circle cx="1460" cy="100" r="120" fill="#ece9ff" opacity="0.7"/>
+  <circle cx="140" cy="790" r="100" fill="#e6f7ff" opacity="0.5"/>
+
+  <!-- Title -->
+  <text x="90" y="100" class="title">Task-conditioned tool-output pruning</text>
+  <text x="90" y="142" class="subtitle">Given a focused query and one tool observation, return the smallest verbatim</text>
+  <text x="90" y="172" class="subtitle">evidence block the agent should inspect next.</text>
+
+  <!-- Card 1: Input -->
+  <g filter="url(#shadow)">
+    <rect x="90" y="220" width="430" height="580" class="card"/>
+
+    <rect x="118" y="236" width="110" height="40" rx="20" fill="url(#g1)"/>
+    <text x="150" y="263" class="step">Step 1</text>
+
+    <text x="118" y="316" class="cardh">Focused query +</text>
+    <text x="118" y="348" class="cardh">raw tool output</text>
+
+    <text x="118" y="392" class="body">The model sees a local agent need,</text>
+    <text x="118" y="418" class="body">not the full bug-solving task.</text>
+
+    <!-- Query chip -->
+    <rect x="118" y="450" width="372" height="76" class="chip"/>
+    <text x="142" y="480" class="mono">Find the traceback that</text>
+    <text x="142" y="506" class="mono">explains the ImportError.</text>
+
+    <!-- Tool types chip -->
+    <rect x="118" y="546" width="372" height="100" class="chip"/>
+    <text x="142" y="576" class="mono">read_file / grep / pytest /</text>
+    <text x="142" y="604" class="mono">git_log / curl / shell logs / ...</text>
+    <text x="142" y="634" class="small">mixed-format tool observation</text>
+
+    <!-- Tool count -->
+    <rect x="118" y="666" width="170" height="40" rx="14" fill="#e8ecff"/>
+    <text x="142" y="692" class="small">27 tool types</text>
+  </g>
+
+  <!-- Arrow 1→2 -->
+  <path class="arrow" d="M520 510 L570 510"/>
+
+  <!-- Card 2: Supervision -->
+  <g filter="url(#shadow)">
+    <rect x="585" y="220" width="430" height="580" class="card"/>
+
+    <rect x="613" y="236" width="110" height="40" rx="20" fill="url(#g2)"/>
+    <text x="645" y="263" class="step">Step 2</text>
+
+    <text x="613" y="316" class="cardh">Grounded span</text>
+    <text x="613" y="348" class="cardh">supervision</text>
+
+    <text x="613" y="392" class="body">Teacher model: gpt-oss-120b</text>
+    <text x="613" y="418" class="body">Select contiguous spans over raw text.</text>
+
+    <!-- Annotated code chip -->
+    <rect x="613" y="450" width="372" height="146" class="chip2"/>
+    <text x="637" y="480" class="mono-gray">183: )</text>
+    <text x="637" y="508" class="mono">184: super().__init__(</text>
+    <text x="637" y="536" class="mono">185:   import_name=...</text>
+    <text x="637" y="564" class="mono">191: self.name = name</text>
+
+    <!-- Gold spans label -->
+    <rect x="613" y="616" width="170" height="42" rx="14" fill="#d1fae5"/>
+    <text x="637" y="644" class="small" fill="#047857">gold spans</text>
+
+    <!-- Stats -->
+    <rect x="613" y="666" width="170" height="40" rx="14" fill="#e7fff7"/>
+    <text x="637" y="692" class="small">11,477 examples</text>
+
+    <rect x="800" y="666" width="185" height="40" rx="14" fill="#e7fff7"/>
+    <text x="824" y="692" class="small">618 test (curated)</text>
+  </g>
+
+  <!-- Arrow 2→3 -->
+  <path class="arrow" d="M1015 510 L1065 510"/>
+
+  <!-- Card 3: Model + Evaluation -->
+  <g filter="url(#shadow)">
+    <rect x="1080" y="220" width="430" height="580" class="card"/>
+
+    <rect x="1108" y="236" width="110" height="40" rx="20" fill="url(#g3)"/>
+    <text x="1140" y="263" class="step">Step 3</text>
+
+    <text x="1108" y="316" class="cardh">Generative model +</text>
+    <text x="1108" y="348" class="cardh">evaluation</text>
+
+    <text x="1108" y="392" class="body">LoRA-tuned Qwen 3.5 2B</text>
+    <text x="1108" y="418" class="body">Evaluate recall, F1, and compression.</text>
+
+    <!-- Output chip -->
+    <rect x="1108" y="450" width="372" height="146" class="chip3"/>
+    <text x="1132" y="480" class="mono">&lt;relevant_lines&gt;</text>
+    <text x="1132" y="508" class="mono">184: super().__init__(</text>
+    <text x="1132" y="536" class="mono">191: self.name = name</text>
+    <text x="1132" y="564" class="mono">&lt;/relevant_lines&gt;</text>
+
+    <!-- Metric chips -->
+    <rect x="1108" y="616" width="170" height="42" rx="14" fill="#fef3c7"/>
+    <text x="1132" y="644" class="small" fill="#92400e">recall 0.862</text>
+
+    <rect x="1295" y="616" width="185" height="42" rx="14" fill="#fef3c7"/>
+    <text x="1319" y="644" class="small" fill="#92400e">compression 91.5%</text>
+
+    <!-- Deployment label -->
+    <rect x="1108" y="666" width="170" height="40" rx="14" fill="#fff1e8"/>
+    <text x="1132" y="692" class="small">CLI pipe + vLLM</text>
+
+    <rect x="1295" y="666" width="185" height="40" rx="14" fill="#fff1e8"/>
+    <text x="1319" y="692" class="small">drop-in for agents</text>
+  </g>
+</svg>

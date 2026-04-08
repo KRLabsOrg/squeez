@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960" role="img" aria-label="Squeez results chart">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbf8ff"/>
+      <stop offset="100%" stop-color="#f6fbff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#23304f" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 50px Inter, ui-sans-serif, system-ui, sans-serif; fill: #182033; }
+      .subtitle { font: 400 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #5b6782; }
+      .axis { stroke: #8a95b0; stroke-width: 2.5; }
+      .grid { stroke: #e5e9f2; stroke-width: 1.5; }
+      .tick { font: 400 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #5d6780; }
+      .label { font: 600 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #27324a; }
+      .model { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #31405c; }
+      .legend { font: 500 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #31405c; }
+      .card { fill: rgba(255,255,255,0.88); stroke: #d9e0ef; stroke-width: 2; rx: 28; }
+      .metric { font: 700 34px Inter, ui-sans-serif, system-ui, sans-serif; fill: #182033; }
+      .metricl { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #6a7590; letter-spacing: 0.08em; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="960" fill="url(#bg)"/>
+  <text x="90" y="90" class="title">Held-out test performance</text>
+  <text x="90" y="132" class="subtitle">The fine-tuned 2B model preserves the most relevant evidence while maintaining high compression.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="170" width="300" height="110" class="card"/>
+    <text x="120" y="208" class="metricl">RECALL</text>
+    <text x="120" y="254" class="metric">0.862</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="410" y="170" width="300" height="110" class="card"/>
+    <text x="440" y="208" class="metricl">F1</text>
+    <text x="440" y="254" class="metric">0.804</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="730" y="170" width="300" height="110" class="card"/>
+    <text x="760" y="208" class="metricl">TOKENS REMOVED</text>
+    <text x="760" y="254" class="metric">91.5%</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="1050" y="170" width="420" height="110" class="card"/>
+    <text x="1080" y="208" class="metricl">GAIN VS QWEN 35B</text>
+    <text x="1080" y="254" class="metric">+11.3 recall points</text>
+  </g>
+
+  <line class="axis" x1="130" y1="830" x2="1490" y2="830"/>
+  <line class="axis" x1="130" y1="330" x2="130" y2="830"/>
+  <line class="grid" x1="130" y1="730" x2="1490" y2="730"/>
+  <line class="grid" x1="130" y1="630" x2="1490" y2="630"/>
+  <line class="grid" x1="130" y1="530" x2="1490" y2="530"/>
+  <line class="grid" x1="130" y1="430" x2="1490" y2="430"/>
+
+  <text x="92" y="836" class="tick">0.0</text>
+  <text x="92" y="736" class="tick">0.2</text>
+  <text x="92" y="636" class="tick">0.4</text>
+  <text x="92" y="536" class="tick">0.6</text>
+  <text x="92" y="436" class="tick">0.8</text>
+  <text x="60" y="315" class="label" transform="rotate(-90 60 315)">score</text>
+
+  <!-- bars -->
+  <g>
+    <rect x="180" y="399" width="44" height="431" rx="10" fill="#6f63ff"/>
+    <rect x="230" y="428" width="44" height="402" rx="10" fill="#c7c2ff"/>
+    <text x="145" y="870" class="model">Squeez-2B</text>
+  </g>
+  <g>
+    <rect x="360" y="455" width="44" height="375" rx="10" fill="#1d9e75"/>
+    <rect x="410" y="467" width="44" height="363" rx="10" fill="#7ddcc1"/>
+    <text x="312" y="870" class="model">Qwen 35B A3B</text>
+  </g>
+  <g>
+    <rect x="540" y="566" width="44" height="264" rx="10" fill="#378add"/>
+    <rect x="590" y="489" width="44" height="341" rx="10" fill="#9bc9ef"/>
+    <text x="539" y="870" class="model">Kimi K2</text>
+  </g>
+  <g>
+    <rect x="720" y="566" width="44" height="264" rx="10" fill="#7f7a89"/>
+    <rect x="770" y="556" width="44" height="274" rx="10" fill="#d2ced8"/>
+    <text x="676" y="870" class="model">Qwen 2B base</text>
+  </g>
+  <g>
+    <rect x="950" y="721" width="30" height="109" rx="8" fill="#d8dbe3"/>
+    <rect x="985" y="714" width="30" height="116" rx="8" fill="#f0f2f7"/>
+    <rect x="1065" y="758" width="30" height="72" rx="8" fill="#d8dbe3"/>
+    <rect x="1100" y="752" width="30" height="78" rx="8" fill="#f0f2f7"/>
+    <rect x="1180" y="780" width="30" height="50" rx="8" fill="#d8dbe3"/>
+    <rect x="1215" y="732" width="30" height="98" rx="8" fill="#f0f2f7"/>
+    <rect x="1295" y="805" width="30" height="25" rx="8" fill="#d8dbe3"/>
+    <rect x="1330" y="760" width="30" height="70" rx="8" fill="#f0f2f7"/>
+    <text x="956" y="870" class="model">BM25</text>
+    <text x="1051" y="870" class="model">First-N</text>
+    <text x="1176" y="870" class="model">Random</text>
+    <text x="1288" y="870" class="model">Last-N</text>
+  </g>
+
+  <rect x="1120" y="330" width="18" height="18" rx="4" fill="#6f63ff"/>
+  <text x="1148" y="345" class="legend">Recall</text>
+  <rect x="1240" y="330" width="18" height="18" rx="4" fill="#c7c2ff"/>
+  <text x="1268" y="345" class="legend">F1</text>
+</svg>
