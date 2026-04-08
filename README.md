@@ -326,11 +326,14 @@ python scripts/build_full_dataset.py \
 ## Citation
 
 ```bibtex
-@software{kovacs2026squeez,
-    title={Squeez: Compressing Tool Output for LLM Coding Agents},
-    author={Adam Kovacs},
-    year={2026},
-    url={https://github.com/KRLabsOrg/squeez}
+@misc{kovács2026squeeztaskconditionedtooloutputpruning,
+      title={Squeez: Task-Conditioned Tool-Output Pruning for Coding Agents}, 
+      author={Ádám Kovács},
+      year={2026},
+      eprint={2604.04979},
+      archivePrefix={arXiv},
+      primaryClass={cs.SE},
+      url={https://arxiv.org/abs/2604.04979}, 
 }
 ```
 

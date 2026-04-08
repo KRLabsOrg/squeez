@@ -246,6 +246,7 @@ One recurring bottleneck in coding agents is deciding what to keep from a single
 
 ## Resources
 
+- **Paper:** [arXiv:2604.04979](https://arxiv.org/abs/2604.04979)
 - **Model:** [KRLabsOrg/squeez-2b](https://huggingface.co/KRLabsOrg/squeez-2b) (Apache 2.0)
 - **Dataset:** [KRLabsOrg/tool-output-extraction-swebench](https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench) (Apache 2.0)
 - **Code & CLI:** [github.com/KRLabsOrg/squeez](https://github.com/KRLabsOrg/squeez) (Apache 2.0)
