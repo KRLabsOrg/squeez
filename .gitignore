@@ -33,3 +33,4 @@ wandb/
 runs/
 checkpoints/
 output/
+paper/

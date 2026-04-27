@@ -43,7 +43,7 @@ import statistics
 logger = logging.getLogger(__name__)
 
 ALL_NAIVE = ["random", "first_n", "last_n", "bm25"]
-ALL_MODEL = ["swe_pruner", "zilliz", "gliner2"]
+ALL_MODEL = ["swe_pruner", "zilliz", "gliner2", "verbatim_v2"]
 ALL_BASELINES = ALL_NAIVE + ALL_MODEL
 
 
@@ -270,6 +270,75 @@ def baseline_zilliz(model, task: str, tool_output: str, threshold: float = 0.5) 
             kept.append(line)
 
     return kept
+
+
+def _load_verbatim_v2(model_name: str = "KRLabsOrg/verbatim-rag-modern-bert-v2"):
+    """Load Verbatim-RAG ModernBERT v2 (needs: transformers + trust_remote_code).
+
+    Device selection:
+      - CUDA when available (intended path on the eval GPU node)
+      - CPU otherwise. We skip MPS by default because the long-context tool-output
+        forward pass routinely bumps into Metal's per-buffer size cap. Set
+        ``SQUEEZ_VERBATIM_DEVICE=mps`` (with ``PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0``)
+        to force MPS anyway.
+    """
+    import os
+
+    import torch
+    from transformers import AutoModel
+
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    forced = os.environ.get("SQUEEZ_VERBATIM_DEVICE")
+    if forced:
+        device = forced
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    model = model.to(device)
+    model.eval()
+    return model
+
+
+def baseline_verbatim_v2(
+    model,
+    task: str,
+    tool_output: str,
+    threshold: float = 0.1,
+    min_span_chars: int = 10,
+    merge_gap_chars: int = 20,
+) -> list[str]:
+    """Verbatim-RAG ModernBERT v2 — keep any line touched by an extracted span.
+
+    Defaults to the recall-tuned config (threshold=0.1, min_span_chars=10) which
+    handles short structured answers (file paths, line numbers, log lines)
+    common in tool output. The model card documents this as the recommended
+    config for technical / structured content.
+    """
+    if not tool_output:
+        return []
+    result = model.process(
+        question=task,
+        context=tool_output,
+        threshold=threshold,
+        min_span_chars=min_span_chars,
+        merge_gap_chars=merge_gap_chars,
+    )
+    spans = result.get("spans", [])
+    if not spans:
+        return []
+    lines = tool_output.split("\n")
+    line_offsets, pos = [], 0
+    for line in lines:
+        line_offsets.append((pos, pos + len(line)))
+        pos += len(line) + 1
+    kept_indices: set[int] = set()
+    for sp in spans:
+        a, b = sp["start"], sp["end"]
+        for i, (lo, hi) in enumerate(line_offsets):
+            if not (b <= lo or a >= hi):
+                kept_indices.add(i)
+    return [lines[i] for i in sorted(kept_indices) if lines[i].strip()]
 
 
 def _load_gliner2():
@@ -506,6 +575,22 @@ def main():
             logger.error("gliner2 not installed. pip install gliner2")
         except Exception as e:
             logger.error(f"GLiNER2 failed: {e}")
+
+    if "verbatim_v2" in baselines:
+        logger.info("Loading Verbatim-RAG ModernBERT v2...")
+        try:
+            model = _load_verbatim_v2()
+            logger.info("Running: verbatim_v2")
+            results.append(
+                evaluate_baseline(
+                    "Verbatim-RAG ModernBERT v2",
+                    baseline_verbatim_v2,
+                    samples,
+                    model=model,
+                )
+            )
+        except Exception as e:
+            logger.error(f"verbatim_v2 failed: {type(e).__name__}: {e}")
 
     # Print and save
     print_results(results)

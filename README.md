@@ -12,7 +12,7 @@
 
 - Tool output pruner for LLM coding agents
 - Pipe any tool output (pytest, grep, git log, npm build, kubectl, ...) through squeez with a task description, get back only the relevant lines
-- Fine-tuned Qwen 3.5 2B, 0.80 F1, 92% compression
+- Two models, same CLI: a **generative** Qwen 3.5 2B (0.80 F1, 92% compression) or a smaller **extractive** ModernBERT alternative
 - CLI pipe, Python library, or vLLM server
 
 Existing context pruning tools ([SWE-Pruner](https://github.com/Ayanami1314/swe-pruner), [Zilliz Semantic Highlight](https://huggingface.co/zilliz/semantic-highlight-bilingual-v1), [Provence](https://arxiv.org/abs/2501.16214)) are built for source code or document paragraphs. They don't handle the mixed, unstructured format of tool output (stack traces interleaved with passing tests, grep matches with context lines, build logs with timestamps). Squeez is trained on 27 types of tool output from real SWE-bench workflows and synthetic multi-ecosystem observations.
@@ -236,41 +236,29 @@ Environment variables:
 | `SQUEEZ_LOCAL_MODEL` | Path to local model directory |
 | `SQUEEZ_SERVER_MODEL` | Model name on the server |
 | `SQUEEZ_API_KEY` | API key (if needed) |
-| `SQUEEZ_BACKEND` | Force backend: `transformers`, `vllm`, `encoder` |
+| `SQUEEZ_BACKEND` | Force backend (rarely needed; auto-detected from the model) |
 
 </details>
 
 <details>
-<summary><b>Encoder models</b></summary>
+<summary><b>Use the extractive model instead</b></summary>
 
-Squeez also supports encoder-based extraction (ModernBERT, etc.) as an alternative to the generative model. These are faster but less accurate.
+If you don't need the 2B generative model, point squeez at a smaller
+extractive one — same CLI, same Python API. Configure once, then use
+`squeez` normally:
 
-Two encoder approaches:
-- **Token encoder**: per-token binary classification, aggregated per line via max-pool
-- **Pooled encoder**: single-pass encoder with line-level mean-pool classification
+```bash
+export SQUEEZ_LOCAL_MODEL=KRLabsOrg/verbatim-rag-modern-bert-v2
 
-```python
-from squeez.inference.extractor import ToolOutputExtractor
-
-extractor = ToolOutputExtractor(model_path="./output/squeez_encoder")
-filtered = extractor.extract(task="Find the bug", tool_output=raw_output)
+pytest -q 2>&1 | squeez "find the failing test"
+git log --oneline -50 | squeez "find the auth commit"
 ```
 
-Standalone loading without squeez installed:
+`KRLabsOrg/verbatim-rag-modern-bert-v2` is a 150M ModernBERT span model
+trained on a multi-domain mix that includes Squeez tool-output. See
+[RESULTS.md](RESULTS.md) for the head-to-head with Squeez-2B.
 
-```python
-from transformers import AutoModel, AutoTokenizer
-
-model = AutoModel.from_pretrained("output/squeez_pooled", trust_remote_code=True)
-tokenizer = AutoTokenizer.from_pretrained("output/squeez_pooled")
-
-result = model.process(
-    task="Find the traceback",
-    tool_output=open("output.log").read(),
-    tokenizer=tokenizer,
-)
-print(result["highlighted_lines"])
-```
+To train your own extractive model, see [TRAINING.md](TRAINING.md).
 
 </details>
 

@@ -81,20 +81,42 @@ def _build_messages(task: str, tool_output: str) -> list[dict]:
 
 
 def _detect_local_model_type(model_path: str) -> str:
-    """Detect the type of a local model: 'encoder', 'pooled', or 'transformers'."""
+    """Detect the model backend: 'encoder', 'pooled', 'highlighter', or 'transformers'.
+
+    Handles both local paths and HuggingFace repo ids. Highlighter detection
+    looks for an ``auto_map`` entry pointing to a ``*Highlighter`` class — i.e.
+    the Verbatim-RAG ModernBERT family (v2, ACL-specialized).
+    """
     import json
 
+    # Local path: read config.json directly
     config_path = Path(model_path) / "config.json"
-    if not config_path.exists():
-        return "transformers"
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            if config.get("model_type") == "squeez-pooled":
+                return "pooled"
+            if config.get("model_type") == "squeez-encoder":
+                return "encoder"
+            auto_map = config.get("auto_map") or {}
+            target = auto_map.get("AutoModel") or auto_map.get("AutoModelForTokenClassification")
+            if target and "Highlighter" in target:
+                return "highlighter"
+            return "transformers"
+        except (json.JSONDecodeError, OSError):
+            return "transformers"
+
+    # Not a local dir — could be a HuggingFace repo id. Probe via AutoConfig.
     try:
-        with open(config_path) as f:
-            config = json.load(f)
-        if config.get("model_type") == "squeez-pooled":
-            return "pooled"
-        if config.get("model_type") == "squeez-encoder":
-            return "encoder"
-    except (json.JSONDecodeError, OSError):
+        from transformers import AutoConfig
+
+        cfg = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        auto_map = getattr(cfg, "auto_map", None) or {}
+        target = auto_map.get("AutoModel") or auto_map.get("AutoModelForTokenClassification")
+        if target and "Highlighter" in target:
+            return "highlighter"
+    except Exception:
         pass
     return "transformers"
 
@@ -102,11 +124,13 @@ def _detect_local_model_type(model_path: str) -> str:
 class ToolOutputExtractor:
     """Extract relevant lines from tool output using a fine-tuned model.
 
-    Supports four backends:
+    Supports five backends:
     - vLLM/OpenAI-compatible server: pass base_url
     - Local transformers (generative): pass model_path
     - Encoder (token-level): auto-detected from model config, or backend="encoder"
     - Pooled (line-level): auto-detected from model config, or backend="pooled"
+    - Highlighter (Verbatim-RAG ModernBERT family): auto-detected via auto_map,
+      or backend="highlighter"
 
     Usage:
         # vLLM (connects to running server)
@@ -120,6 +144,9 @@ class ToolOutputExtractor:
 
         # Pooled line classifier (auto-detected)
         extractor = ToolOutputExtractor(model_path="./output/squeez_pooled")
+
+        # Verbatim-RAG ModernBERT v2 (auto-detected, loads from HuggingFace)
+        extractor = ToolOutputExtractor(model_path="KRLabsOrg/verbatim-rag-modern-bert-v2")
 
         filtered = extractor.extract(task="Fix the bug", tool_output=raw)
     """
@@ -165,6 +192,12 @@ class ToolOutputExtractor:
             if not model_path:
                 raise ValueError("Backend is set to pooled, but no local model was configured.")
             self._init_pooled(model_path, device)
+        elif preferred_backend == "highlighter":
+            if not model_path:
+                raise ValueError(
+                    "Backend is set to highlighter, but no local model was configured."
+                )
+            self._init_highlighter(model_path, device)
         elif preferred_backend == "vllm":
             if not base_url:
                 raise ValueError("Backend is set to vllm, but no server URL was configured.")
@@ -184,6 +217,8 @@ class ToolOutputExtractor:
                 self._init_pooled(model_path, device)
             elif model_type == "encoder":
                 self._init_encoder(model_path, device)
+            elif model_type == "highlighter":
+                self._init_highlighter(model_path, device)
             else:
                 self._init_transformers(model_path, device)
         else:
@@ -237,6 +272,40 @@ class ToolOutputExtractor:
         self._model = self._model.to(device)
         self._model.eval()
         self._backend = "encoder"
+
+    def _init_highlighter(self, model_path: str, device: str):
+        """Initialize Verbatim-RAG ModernBERT highlighter backend.
+
+        Loads any model that exposes ``.process(question, context, threshold,
+        min_span_chars, merge_gap_chars)`` via ``trust_remote_code=True``.
+        Examples: ``KRLabsOrg/verbatim-rag-modern-bert-v2``,
+        ``KRLabsOrg/acl-verbatim-modernbert``.
+        """
+        import torch
+        from transformers import AutoModel
+
+        self._model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+
+        if device == "auto":
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif (
+                getattr(torch.backends, "mps", None) is not None
+                and torch.backends.mps.is_available()
+            ):
+                device = "mps"
+            else:
+                device = "cpu"
+        self._model = self._model.to(device)
+        self._model.eval()
+        self._backend = "highlighter"
+
+        # Recall-tuned defaults — short structured answers are the norm in tool
+        # output (file paths, line numbers, error messages). The model card
+        # documents these as the recommended config for technical content.
+        self._highlighter_threshold = 0.1
+        self._highlighter_min_span_chars = 10
+        self._highlighter_merge_gap_chars = 20
 
     def _init_vllm(self, base_url: str, model_name: str | None):
         """Initialize OpenAI-compatible backend (vLLM, Groq, etc.)."""
@@ -330,6 +399,9 @@ class ToolOutputExtractor:
         if self._backend == "pooled":
             return self._extract_pooled(task, tool_output)
 
+        if self._backend == "highlighter":
+            return self._extract_highlighter(task, tool_output)
+
         if self._backend == "vllm":
             raw = self._extract_vllm(task, tool_output, max_new_tokens, temperature)
         else:
@@ -406,6 +478,33 @@ class ToolOutputExtractor:
         )
         return "\n".join(lines)
 
+    def _extract_highlighter(self, task: str, tool_output: str) -> str:
+        """Extract using Verbatim-RAG ModernBERT — keep any line touched by a span."""
+        if not tool_output:
+            return ""
+        result = self._model.process(
+            question=task,
+            context=tool_output,
+            threshold=self._highlighter_threshold,
+            min_span_chars=self._highlighter_min_span_chars,
+            merge_gap_chars=self._highlighter_merge_gap_chars,
+        )
+        spans = result.get("spans", []) or []
+        if not spans:
+            return ""
+        lines = tool_output.split("\n")
+        line_offsets, pos = [], 0
+        for line in lines:
+            line_offsets.append((pos, pos + len(line)))
+            pos += len(line) + 1
+        kept_indices: set[int] = set()
+        for sp in spans:
+            a, b = sp["start"], sp["end"]
+            for i, (lo, hi) in enumerate(line_offsets):
+                if not (b <= lo or a >= hi):
+                    kept_indices.add(i)
+        return "\n".join(lines[i] for i in sorted(kept_indices) if lines[i].strip())
+
     def _extract_vllm(
         self, task: str, tool_output: str, max_new_tokens: int, temperature: float
     ) -> str:
@@ -474,7 +573,11 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
         "--model-path",
         dest="local_model",
         default=None,
-        help="Path to a local extractor model (overrides config)",
+        help=(
+            "Path or HuggingFace id of an extractor model (overrides config). "
+            "Pass `KRLabsOrg/verbatim-rag-modern-bert-v2` to use the published "
+            "highlighter model — it will be auto-detected and downloaded."
+        ),
     )
     parser.add_argument(
         "--server-url",
@@ -492,11 +595,79 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     )
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.1)
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Print token/line savings to stderr after output",
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print accumulated session stats and exit",
+    )
     return parser
+
+
+_STATS_LOG = Path.home() / ".cache" / "squeez" / "session_stats.jsonl"
+
+
+def _log_stats(in_tokens: int, out_tokens: int, query: str) -> None:
+    """Append a stats entry to the session log."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    _STATS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "in_tokens": in_tokens,
+        "out_tokens": out_tokens,
+        "query": query[:80],
+    }
+    with open(_STATS_LOG, "a") as f:
+        f.write(_json.dumps(entry) + "\n")
+
+
+def _print_summary() -> int:
+    """Print accumulated session stats."""
+    import json as _json
+
+    if not _STATS_LOG.exists():
+        print("No squeez usage recorded yet.")
+        return 0
+
+    total_in = 0
+    total_out = 0
+    calls = 0
+    with open(_STATS_LOG) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = _json.loads(line)
+            total_in += entry["in_tokens"]
+            total_out += entry["out_tokens"]
+            calls += 1
+
+    saved = total_in - total_out
+    saved_pct = (1 - total_out / total_in) * 100 if total_in > 0 else 0
+
+    print(
+        f"\033[1m\033[36msqueez session summary\033[0m\n"
+        f"\033[90m{'─' * 40}\033[0m\n"
+        f"  calls:       {calls:,}\n"
+        f"  tokens in:   ~{total_in:,}\n"
+        f"  tokens out:  ~{total_out:,}\n"
+        f"  \033[32mtokens saved: ~{saved:,} ({saved_pct:.0f}%)\033[0m\n"
+        f"\033[90m{'─' * 40}\033[0m"
+    )
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:
     """Run the extractor CLI from parsed args."""
+
+    if args.summary:
+        return _print_summary()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -522,6 +693,30 @@ def run(args: argparse.Namespace) -> int:
     )
 
     print(result)
+
+    # Compute stats
+    in_chars = len(tool_output)
+    out_chars = len(result)
+    in_tokens = in_chars // 4
+    out_tokens = out_chars // 4
+
+    # Always log to session file
+    _log_stats(in_tokens, out_tokens, args.task)
+
+    if args.stats:
+        in_lines = tool_output.count("\n") + (
+            1 if tool_output and not tool_output.endswith("\n") else 0
+        )
+        out_lines = result.count("\n") + (1 if result and not result.endswith("\n") else 0)
+        saved_pct = (1 - out_tokens / in_tokens) * 100 if in_tokens > 0 else 0
+        print(
+            f"\n\033[90m───\033[0m\n"
+            f"\033[90m📥 input:  {in_lines:,} lines  ~{in_tokens:,} tokens\033[0m\n"
+            f"\033[90m📤 output: {out_lines:,} lines  ~{out_tokens:,} tokens\033[0m\n"
+            f"\033[32m💰 saved:  {saved_pct:.0f}% fewer tokens for your agent\033[0m",
+            file=sys.stderr,
+        )
+
     return 0
 
 
