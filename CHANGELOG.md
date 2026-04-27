@@ -2,6 +2,15 @@
 
 All notable changes to Squeez are documented here.
 
+## [0.1.4] - 2026-04-27
+
+### Added
+- **Extractive backend (`highlighter`)**: auto-detected support for `KRLabsOrg/verbatim-rag-modern-bert-v2` (and any compatible Verbatim-RAG ModernBERT span model). Same CLI, same Python API — just point `SQUEEZ_LOCAL_MODEL` at the HF id.
+- **Session stats**: `--stats` prints token/line savings per call; `--summary` prints accumulated savings across the session. Logged to `~/.cache/squeez/session_stats.jsonl`.
+
+### Changed
+- Docs reframed around two model types (generative vs extractive) instead of internal backend names.
+
 ## [0.1.3] - 2026-03-18
 
 ### Fixed

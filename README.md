@@ -254,9 +254,9 @@ pytest -q 2>&1 | squeez "find the failing test"
 git log --oneline -50 | squeez "find the auth commit"
 ```
 
-`KRLabsOrg/verbatim-rag-modern-bert-v2` is a 150M ModernBERT span model
-trained on a multi-domain mix that includes Squeez tool-output. See
-[RESULTS.md](RESULTS.md) for the head-to-head with Squeez-2B.
+[`KRLabsOrg/verbatim-rag-modern-bert-v2`](https://huggingface.co/KRLabsOrg/verbatim-rag-modern-bert-v2)
+is a 150M ModernBERT span model trained on a multi-domain mix that includes
+Squeez tool-output — its model card has the head-to-head numbers.
 
 To train your own extractive model, see [TRAINING.md](TRAINING.md).
 
